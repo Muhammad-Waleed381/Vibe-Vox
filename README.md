@@ -47,6 +47,6 @@ Building this required solving three core ML Engineering problems:
 
 ### Installation
 ```bash
-git clone [https://github.com/FATBOY/VibeVox-Core.git](https://github.com/FATBOY/VibeVox-Core.git)
-cd VibeVox-Core
+git clone https://github.com/Muhammad-Waleed381/Vibe-Vox.git
+cd Vibe-Vox
 pip install -r requirements.txt
