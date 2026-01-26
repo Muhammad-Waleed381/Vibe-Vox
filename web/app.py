@@ -71,6 +71,7 @@ async def speak(
     model: str = DEFAULT_OLLAMA_MODEL,
     groq_model: str = DEFAULT_GROQ_MODEL,
     speaker: str = DEFAULT_SPEAKER,
+    audio_mime: str = "audio/mpeg",
 ):
     if not text.strip():
         raise HTTPException(status_code=400, detail="Text is required")
@@ -98,7 +99,7 @@ async def speak(
 
     return StreamingResponse(
         _ollama_stream(prompt, ollama_port, model),
-        media_type="application/octet-stream",
+        media_type=audio_mime,
     )
 
 

@@ -131,6 +131,10 @@
           <span class="badge" id="status">Idle</span>
         </div>
 
+        <div style="margin-top: 12px;">
+          <audio id="player" controls style="width: 100%;"></audio>
+        </div>
+
         <div class="status" id="detail"></div>
       </div>
     </div>
@@ -144,10 +148,15 @@
       const modelInput = document.getElementById("model");
       const speakerInput = document.getElementById("speaker");
       const textInput = document.getElementById("text");
+      const player = document.getElementById("player");
 
       let controller = null;
       let audioCtx = null;
       let source = null;
+      let mediaSource = null;
+      let sourceBuffer = null;
+      let streamQueue = [];
+      let streaming = false;
 
       function setStatus(label, info) {
         statusBadge.textContent = label;
@@ -183,41 +192,116 @@
             throw new Error(errorText || "Failed to stream audio");
           }
 
-          const reader = response.body.getReader();
-          const chunks = [];
-          let total = 0;
-          setStatus("Streaming", "Receiving audio bytes...");
-
-          while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            if (value) {
-              chunks.push(value);
-              total += value.length;
-            }
+          const contentType = response.headers.get("content-type") || "";
+          if (window.MediaSource && MediaSource.isTypeSupported("audio/mpeg")) {
+            setStatus("Streaming", "Streaming audio... (MediaSource)");
+            startMediaSourceStream(response.body);
+          } else {
+            setStatus("Streaming", "Receiving audio bytes...");
+            await bufferAndPlay(response.body, contentType);
           }
-
-          setStatus("Decoding", `Received ${total} bytes. Decoding...`);
-          const buffer = new Uint8Array(total);
-          let offset = 0;
-          for (const chunk of chunks) {
-            buffer.set(chunk, offset);
-            offset += chunk.length;
-          }
-
-          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-          const audioBuffer = await audioCtx.decodeAudioData(buffer.buffer);
-          source = audioCtx.createBufferSource();
-          source.buffer = audioBuffer;
-          source.connect(audioCtx.destination);
-          source.start(0);
-
-          setStatus("Playing", "Audio playback started");
-          source.onended = () => stop();
         } catch (err) {
           setStatus("Error", err.message || "Streaming failed");
           stop();
         }
+      }
+
+      function startMediaSourceStream(readableStream) {
+        mediaSource = new MediaSource();
+        player.src = URL.createObjectURL(mediaSource);
+        streaming = true;
+
+        mediaSource.addEventListener("sourceopen", async () => {
+          try {
+            sourceBuffer = mediaSource.addSourceBuffer("audio/mpeg");
+          } catch (_) {
+            setStatus("Error", "MediaSource audio/mpeg not supported");
+            stop();
+            return;
+          }
+
+          const reader = readableStream.getReader();
+          sourceBuffer.addEventListener("updateend", appendNextChunk);
+
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            if (value && value.length) {
+              streamQueue.push(value);
+              appendNextChunk();
+            }
+          }
+
+          await waitForQueueDrain();
+          if (mediaSource.readyState === "open") {
+            mediaSource.endOfStream();
+          }
+          setStatus("Playing", "Audio playback started");
+        });
+      }
+
+      function appendNextChunk() {
+        if (!sourceBuffer || sourceBuffer.updating) return;
+        if (!streamQueue.length) return;
+        const chunk = streamQueue.shift();
+        try {
+          sourceBuffer.appendBuffer(chunk);
+        } catch (err) {
+          setStatus("Error", "Stream append failed. Falling back.");
+          stop();
+        }
+      }
+
+      function waitForQueueDrain() {
+        return new Promise((resolve) => {
+          const check = () => {
+            if (!streamQueue.length && (!sourceBuffer || !sourceBuffer.updating)) {
+              resolve();
+              return;
+            }
+            setTimeout(check, 50);
+          };
+          check();
+        });
+      }
+
+      async function bufferAndPlay(readableStream, contentType) {
+        const reader = readableStream.getReader();
+        const chunks = [];
+        let total = 0;
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) {
+            chunks.push(value);
+            total += value.length;
+          }
+        }
+
+        setStatus("Decoding", `Received ${total} bytes. Decoding...`);
+        const buffer = new Uint8Array(total);
+        let offset = 0;
+        for (const chunk of chunks) {
+          buffer.set(chunk, offset);
+          offset += chunk.length;
+        }
+
+        if (contentType.startsWith("audio/") && player) {
+          const blob = new Blob([buffer], { type: contentType });
+          player.src = URL.createObjectURL(blob);
+          await player.play();
+          setStatus("Playing", "Audio playback started");
+          return;
+        }
+
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const audioBuffer = await audioCtx.decodeAudioData(buffer.buffer);
+        source = audioCtx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioCtx.destination);
+        source.start(0);
+        setStatus("Playing", "Audio playback started");
+        source.onended = () => stop();
       }
 
       function stop() {
@@ -230,9 +314,21 @@
         if (audioCtx) {
           audioCtx.close();
         }
+        if (mediaSource && mediaSource.readyState === "open") {
+          try { mediaSource.endOfStream(); } catch (_) {}
+        }
+        if (player) {
+          player.pause();
+          player.removeAttribute("src");
+          player.load();
+        }
         controller = null;
         source = null;
         audioCtx = null;
+        mediaSource = null;
+        sourceBuffer = null;
+        streamQueue = [];
+        streaming = false;
         playBtn.disabled = false;
         stopBtn.disabled = true;
         setStatus("Idle", "");
