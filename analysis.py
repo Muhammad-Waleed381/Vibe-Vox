@@ -12,6 +12,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from ingestion import ingest_text
 from semantic_chunker import Chunk, DEFAULT_TOKENIZER_MODEL
 from style_prompt_compiler import StylePrompt, compile_style_prompt
+from dialogue_detection import has_dialogue
+from groq_client import GroqConfig, analyze_text_groq, load_groq_config
 
 
 ANALYSIS_MODEL_ID = DEFAULT_TOKENIZER_MODEL
@@ -58,18 +60,23 @@ def analyze_chunk(
     tokenizer,
     max_new_tokens: int = 64,
     character_mode: bool = False,
+    groq_config: GroqConfig | None = None,
 ) -> AnalysisResult:
-    prompt = PROMPT_TEMPLATE.format(text=chunk.text)
-    inputs = tokenizer(prompt, return_tensors="pt")
-    output_ids = model.generate(
-        **inputs,
-        max_new_tokens=max_new_tokens,
-        do_sample=False,
-    )
-    output_text = tokenizer.decode(output_ids[0], skip_special_tokens=True)
-    data = _extract_json(output_text) or {}
-    emotion = data.get("Emotion", "Neutral")
-    intensity = data.get("Intensity", "Medium")
+    output_text = ""
+    if groq_config:
+        emotion, intensity, output_text = analyze_text_groq(chunk.text, groq_config)
+    else:
+        prompt = PROMPT_TEMPLATE.format(text=chunk.text)
+        inputs = tokenizer(prompt, return_tensors="pt")
+        output_ids = model.generate(
+            **inputs,
+            max_new_tokens=max_new_tokens,
+            do_sample=False,
+        )
+        output_text = tokenizer.decode(output_ids[0], skip_special_tokens=True)
+        data = _extract_json(output_text) or {}
+        emotion = data.get("Emotion", "Neutral")
+        intensity = data.get("Intensity", "Medium")
     style_prompt = compile_style_prompt(
         emotion,
         intensity,
@@ -92,6 +99,7 @@ def analyze_text(
     character_mode: bool = False,
     model=None,
     tokenizer=None,
+    groq_model: str | None = None,
 ) -> List[AnalysisResult]:
     chunks = ingest_text(
         text,
@@ -101,15 +109,22 @@ def analyze_text(
         tokenizer=tokenizer,
     )
 
-    if model is None or tokenizer is None:
+    groq_config = None
+    if groq_model is not None:
+        groq_config = load_groq_config(groq_model)
+    elif model is None or tokenizer is None:
         model, tokenizer = load_analysis_model(model_id)
 
-    return [
-        analyze_chunk(
-            chunk,
-            model,
-            tokenizer,
-            character_mode=character_mode,
+    results: List[AnalysisResult] = []
+    for chunk in chunks:
+        auto_character = has_dialogue(chunk.text)
+        results.append(
+            analyze_chunk(
+                chunk,
+                model,
+                tokenizer,
+                character_mode=character_mode or auto_character,
+                groq_config=groq_config,
+            )
         )
-        for chunk in chunks
-    ]
+    return results
