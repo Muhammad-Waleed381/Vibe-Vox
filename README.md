@@ -50,3 +50,45 @@ Building this required solving three core ML Engineering problems:
 git clone https://github.com/Muhammad-Waleed381/Vibe-Vox.git
 cd Vibe-Vox
 pip install -r requirements.txt
+python -m nltk.downloader punkt
+```
+
+## 🔎 Semantic Chunking (MVP)
+
+Use the ingestion pipeline to split text into semantic chunks with
+model-accurate token budgets.
+
+```python
+from ingestion import ingest_text
+
+text = "The hallway was quiet. He paused, listening for any sound."
+chunks = ingest_text(text, max_tokens=150)
+
+for chunk in chunks:
+    print(chunk.chunk_id, chunk.token_count, chunk.text)
+```
+
+## 🧠 Analysis Stage (Emotion + Intensity)
+
+Run the analysis LLM on each chunk to get Emotion/Intensity labels.
+
+```python
+from analysis import analyze_text
+
+text = "The hallway was quiet. He paused, listening for any sound."
+results = analyze_text(text, max_tokens=150)
+
+for result in results:
+    print(result.emotion, result.intensity, result.style_prompt.prompt)
+```
+
+## 🎛️ Style Prompt Compiler
+
+Map Emotion/Intensity to a TTS style prompt for Voice Design mode.
+
+```python
+from style_prompt_compiler import compile_style_prompt
+
+style = compile_style_prompt("Suspense", "High", speaker="Male_Narrator")
+print(style.prompt)
+```
