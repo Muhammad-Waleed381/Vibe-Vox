@@ -114,6 +114,10 @@
             <label for="model">Ollama Model</label>
             <input id="model" type="text" value="qwen3-tts" />
           </div>
+          <div>
+            <label for="speaker">Speaker</label>
+            <input id="speaker" type="text" value="Male_Narrator" />
+          </div>
         </div>
 
         <div>
@@ -138,6 +142,7 @@
       const detail = document.getElementById("detail");
       const portInput = document.getElementById("port");
       const modelInput = document.getElementById("model");
+      const speakerInput = document.getElementById("speaker");
       const textInput = document.getElementById("text");
 
       let controller = null;
@@ -165,6 +170,7 @@
           text,
           ollama_port: portInput.value || "11434",
           model: modelInput.value || "qwen3-tts",
+          speaker: speakerInput.value || "Male_Narrator",
         });
 
         try {

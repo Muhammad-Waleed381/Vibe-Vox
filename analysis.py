@@ -11,7 +11,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from ingestion import ingest_text
 from semantic_chunker import Chunk, DEFAULT_TOKENIZER_MODEL
-from style_prompt_compiler import StylePrompt, compile_style_prompt
+from style_prompt_compiler import DEFAULT_SPEAKER, StylePrompt, compile_style_prompt
 from dialogue_detection import has_dialogue
 from groq_client import GroqConfig, analyze_text_groq, load_groq_config
 
@@ -61,6 +61,7 @@ def analyze_chunk(
     max_new_tokens: int = 64,
     character_mode: bool = False,
     groq_config: GroqConfig | None = None,
+    speaker: str = DEFAULT_SPEAKER,
 ) -> AnalysisResult:
     output_text = ""
     if groq_config:
@@ -80,6 +81,7 @@ def analyze_chunk(
     style_prompt = compile_style_prompt(
         emotion,
         intensity,
+        speaker=speaker,
         character_mode=character_mode,
     )
     return AnalysisResult(
@@ -100,6 +102,7 @@ def analyze_text(
     model=None,
     tokenizer=None,
     groq_model: str | None = None,
+    speaker: str = DEFAULT_SPEAKER,
 ) -> List[AnalysisResult]:
     chunks = ingest_text(
         text,
@@ -125,6 +128,7 @@ def analyze_text(
                 tokenizer,
                 character_mode=character_mode or auto_character,
                 groq_config=groq_config,
+                speaker=speaker,
             )
         )
     return results

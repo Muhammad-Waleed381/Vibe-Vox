@@ -16,6 +16,8 @@ INDEX_PATH = APP_DIR / "index.html"
 
 DEFAULT_OLLAMA_PORT = 11434
 DEFAULT_OLLAMA_MODEL = "qwen3-tts"
+DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant"
+DEFAULT_SPEAKER = "Male_Narrator"
 
 app = FastAPI(title="VibeVox MVP")
 
@@ -37,14 +39,14 @@ def _build_ollama_url(port: int) -> str:
 
 
 async def _ollama_stream(
-    text: str,
+    prompt: str,
     port: int,
     model: str,
 ) -> AsyncGenerator[bytes, None]:
     url = _build_ollama_url(port)
     payload = {
         "model": model,
-        "prompt": text,
+        "prompt": prompt,
         "stream": True,
     }
 
@@ -67,12 +69,35 @@ async def speak(
     text: str,
     ollama_port: int = DEFAULT_OLLAMA_PORT,
     model: str = DEFAULT_OLLAMA_MODEL,
+    groq_model: str = DEFAULT_GROQ_MODEL,
+    speaker: str = DEFAULT_SPEAKER,
 ):
     if not text.strip():
         raise HTTPException(status_code=400, detail="Text is required")
 
+    try:
+        from analysis import analyze_text
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Analysis import failed: {exc}")
+
+    try:
+        results = analyze_text(
+            text,
+            max_tokens=150,
+            groq_model=groq_model,
+            speaker=speaker,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    prompt_parts = []
+    for result in results:
+        prompt_parts.append(result.style_prompt.prompt)
+        prompt_parts.append(result.chunk.text)
+    prompt = "\n\n".join(prompt_parts)
+
     return StreamingResponse(
-        _ollama_stream(text, ollama_port, model),
+        _ollama_stream(prompt, ollama_port, model),
         media_type="application/octet-stream",
     )
 
