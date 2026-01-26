@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VibeVox MVP</title>
+    <style>
+      :root {
+        --bg: #f5f2ec;
+        --panel: #fff8ee;
+        --ink: #1f1c17;
+        --accent: #b45a2b;
+        --accent-dark: #8e4521;
+        --muted: #6b6156;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "IBM Plex Serif", "Georgia", serif;
+        color: var(--ink);
+        background: radial-gradient(800px 400px at 20% 20%, #fff2db, transparent),
+          linear-gradient(180deg, #f7f2ea 0%, #ede2d2 100%);
+      }
+      .wrap {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 32px 16px;
+      }
+      .panel {
+        width: min(880px, 95vw);
+        background: var(--panel);
+        border: 1px solid #e3d5c3;
+        border-radius: 16px;
+        box-shadow: 0 18px 40px rgba(48, 32, 18, 0.15);
+        padding: 28px;
+      }
+      h1 {
+        font-size: 28px;
+        margin: 0 0 8px;
+        letter-spacing: 0.4px;
+      }
+      p {
+        margin: 0 0 20px;
+        color: var(--muted);
+      }
+      label {
+        font-weight: 600;
+        display: block;
+        margin-bottom: 6px;
+      }
+      .grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        margin-bottom: 16px;
+      }
+      input, textarea {
+        width: 100%;
+        border: 1px solid #d9c8b5;
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-size: 14px;
+        background: #fffaf3;
+        color: var(--ink);
+      }
+      textarea { min-height: 160px; resize: vertical; }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+      }
+      button {
+        border: none;
+        border-radius: 10px;
+        padding: 10px 16px;
+        font-size: 14px;
+        cursor: pointer;
+        background: var(--accent);
+        color: #fff;
+        transition: transform 0.15s ease, background 0.15s ease;
+      }
+      button:hover { background: var(--accent-dark); transform: translateY(-1px); }
+      button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+      .status {
+        margin-top: 12px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .badge {
+        display: inline-block;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: #ead7c5;
+        color: #6a3a1c;
+        font-size: 12px;
+        margin-left: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="panel">
+        <h1>VibeVox MVP</h1>
+        <p>Stream local Qwen TTS from Ollama. Paste text and play.</p>
+
+        <div class="grid">
+          <div>
+            <label for="port">Ollama Port</label>
+            <input id="port" type="number" value="11434" min="1" max="65535" />
+          </div>
+          <div>
+            <label for="model">Ollama Model</label>
+            <input id="model" type="text" value="qwen3-tts" />
+          </div>
+        </div>
+
+        <div>
+          <label for="text">Text</label>
+          <textarea id="text">The hallway was quiet. He paused, listening for any sound.</textarea>
+        </div>
+
+        <div class="actions" style="margin-top: 16px;">
+          <button id="play">Play</button>
+          <button id="stop" disabled>Stop</button>
+          <span class="badge" id="status">Idle</span>
+        </div>
+
+        <div class="status" id="detail"></div>
+      </div>
+    </div>
+
+    <script>
+      const playBtn = document.getElementById("play");
+      const stopBtn = document.getElementById("stop");
+      const statusBadge = document.getElementById("status");
+      const detail = document.getElementById("detail");
+      const portInput = document.getElementById("port");
+      const modelInput = document.getElementById("model");
+      const textInput = document.getElementById("text");
+
+      let controller = null;
+      let audioCtx = null;
+      let source = null;
+
+      function setStatus(label, info) {
+        statusBadge.textContent = label;
+        detail.textContent = info || "";
+      }
+
+      async function play() {
+        const text = textInput.value.trim();
+        if (!text) {
+          setStatus("Error", "Text is required");
+          return;
+        }
+
+        playBtn.disabled = true;
+        stopBtn.disabled = false;
+        setStatus("Streaming", "Connecting to local Ollama...");
+
+        controller = new AbortController();
+        const params = new URLSearchParams({
+          text,
+          ollama_port: portInput.value || "11434",
+          model: modelInput.value || "qwen3-tts",
+        });
+
+        try {
+          const response = await fetch(`/api/speak?${params.toString()}`, {
+            method: "POST",
+            signal: controller.signal,
+          });
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText || "Failed to stream audio");
+          }
+
+          const reader = response.body.getReader();
+          const chunks = [];
+          let total = 0;
+          setStatus("Streaming", "Receiving audio bytes...");
+
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            if (value) {
+              chunks.push(value);
+              total += value.length;
+            }
+          }
+
+          setStatus("Decoding", `Received ${total} bytes. Decoding...`);
+          const buffer = new Uint8Array(total);
+          let offset = 0;
+          for (const chunk of chunks) {
+            buffer.set(chunk, offset);
+            offset += chunk.length;
+          }
+
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          const audioBuffer = await audioCtx.decodeAudioData(buffer.buffer);
+          source = audioCtx.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(audioCtx.destination);
+          source.start(0);
+
+          setStatus("Playing", "Audio playback started");
+          source.onended = () => stop();
+        } catch (err) {
+          setStatus("Error", err.message || "Streaming failed");
+          stop();
+        }
+      }
+
+      function stop() {
+        if (controller) {
+          controller.abort();
+        }
+        if (source) {
+          try { source.stop(); } catch (_) {}
+        }
+        if (audioCtx) {
+          audioCtx.close();
+        }
+        controller = null;
+        source = null;
+        audioCtx = null;
+        playBtn.disabled = false;
+        stopBtn.disabled = true;
+        setStatus("Idle", "");
+      }
+
+      playBtn.addEventListener("click", play);
+      stopBtn.addEventListener("click", stop);
+    </script>
+  </body>
+</html>
