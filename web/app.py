@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 import os
+import asyncio
 
 import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
+
+from dialogue_detection import has_dialogue
+from groq_client import analyze_text_groq, load_groq_config
+from ingestion import ingest_text
+from style_prompt_compiler import compile_style_prompt
 
 
 APP_DIR = Path(__file__).parent
@@ -77,28 +83,48 @@ async def speak(
         raise HTTPException(status_code=400, detail="Text is required")
 
     try:
-        from analysis import analyze_text
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Analysis import failed: {exc}")
-
-    try:
-        results = analyze_text(
-            text,
-            max_tokens=150,
-            groq_model=groq_model,
-            speaker=speaker,
-        )
+        groq_config = load_groq_config(groq_model)
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
-    prompt_parts = []
-    for result in results:
-        prompt_parts.append(result.style_prompt.prompt)
-        prompt_parts.append(result.chunk.text)
-    prompt = "\n\n".join(prompt_parts)
+    chunks = ingest_text(text, max_tokens=150)
+
+    async def producer(queue: asyncio.Queue) -> None:
+        try:
+            for chunk in chunks:
+                auto_character = has_dialogue(chunk.text)
+                emotion, intensity, _raw = await asyncio.to_thread(
+                    analyze_text_groq,
+                    chunk.text,
+                    groq_config,
+                )
+                style = compile_style_prompt(
+                    emotion,
+                    intensity,
+                    speaker=speaker,
+                    character_mode=auto_character,
+                )
+                await queue.put((style.prompt, chunk.text))
+        finally:
+            await queue.put(None)
+
+    async def pipeline_stream() -> AsyncGenerator[bytes, None]:
+        queue: asyncio.Queue[Optional[tuple[str, str]]] = asyncio.Queue(maxsize=2)
+        producer_task = asyncio.create_task(producer(queue))
+        try:
+            while True:
+                item = await queue.get()
+                if item is None:
+                    break
+                style_prompt, chunk_text = item
+                prompt = f"{style_prompt}\n\n{chunk_text}"
+                async for audio_chunk in _ollama_stream(prompt, ollama_port, model):
+                    yield audio_chunk
+        finally:
+            producer_task.cancel()
 
     return StreamingResponse(
-        _ollama_stream(prompt, ollama_port, model),
+        pipeline_stream(),
         media_type=audio_mime,
     )
 
