@@ -57,6 +57,7 @@ def analyze_chunk(
     model,
     tokenizer,
     max_new_tokens: int = 64,
+    character_mode: bool = False,
 ) -> AnalysisResult:
     prompt = PROMPT_TEMPLATE.format(text=chunk.text)
     inputs = tokenizer(prompt, return_tensors="pt")
@@ -69,7 +70,11 @@ def analyze_chunk(
     data = _extract_json(output_text) or {}
     emotion = data.get("Emotion", "Neutral")
     intensity = data.get("Intensity", "Medium")
-    style_prompt = compile_style_prompt(emotion, intensity)
+    style_prompt = compile_style_prompt(
+        emotion,
+        intensity,
+        character_mode=character_mode,
+    )
     return AnalysisResult(
         chunk=chunk,
         emotion=emotion,
@@ -84,6 +89,7 @@ def analyze_text(
     model_id: str = ANALYSIS_MODEL_ID,
     min_tokens: int = 40,
     max_tokens: int = 150,
+    character_mode: bool = False,
     model=None,
     tokenizer=None,
 ) -> List[AnalysisResult]:
@@ -98,4 +104,12 @@ def analyze_text(
     if model is None or tokenizer is None:
         model, tokenizer = load_analysis_model(model_id)
 
-    return [analyze_chunk(chunk, model, tokenizer) for chunk in chunks]
+    return [
+        analyze_chunk(
+            chunk,
+            model,
+            tokenizer,
+            character_mode=character_mode,
+        )
+        for chunk in chunks
+    ]
