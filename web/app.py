@@ -20,8 +20,7 @@ from style_prompt_compiler import compile_style_prompt
 APP_DIR = Path(__file__).parent
 INDEX_PATH = APP_DIR / "index.html"
 
-DEFAULT_OLLAMA_PORT = 11434
-DEFAULT_OLLAMA_MODEL = "qwen3-tts"
+DEFAULT_TTS_PORT = 5000
 DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant"
 DEFAULT_SPEAKER = "Male_Narrator"
 
@@ -40,20 +39,21 @@ def index():
     return INDEX_PATH.read_text(encoding="utf-8")
 
 
-def _build_ollama_url(port: int) -> str:
-    return f"http://localhost:{port}/api/generate"
+def _build_tts_url(port: int) -> str:
+    return f"http://localhost:{port}/tts"
 
 
-async def _ollama_stream(
-    prompt: str,
+async def _tts_stream(
+    text: str,
+    style_prompt: str,
+    speaker: str,
     port: int,
-    model: str,
 ) -> AsyncGenerator[bytes, None]:
-    url = _build_ollama_url(port)
+    url = _build_tts_url(port)
     payload = {
-        "model": model,
-        "prompt": prompt,
-        "stream": True,
+        "text": text,
+        "style_prompt": style_prompt,
+        "speaker": speaker,
     }
 
     timeout = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=10.0)
@@ -63,7 +63,7 @@ async def _ollama_stream(
                 detail = await response.aread()
                 raise HTTPException(
                     status_code=502,
-                    detail=f"Ollama error: {detail.decode('utf-8', 'ignore')}",
+                    detail=f"TTS server error: {detail.decode('utf-8', 'ignore')}",
                 )
             async for chunk in response.aiter_bytes():
                 if chunk:
@@ -73,11 +73,10 @@ async def _ollama_stream(
 @app.post("/api/speak")
 async def speak(
     text: str,
-    ollama_port: int = DEFAULT_OLLAMA_PORT,
-    model: str = DEFAULT_OLLAMA_MODEL,
+    tts_port: int = DEFAULT_TTS_PORT,
     groq_model: str = DEFAULT_GROQ_MODEL,
     speaker: str = DEFAULT_SPEAKER,
-    audio_mime: str = "audio/mpeg",
+    audio_mime: str = "audio/wav",
 ):
     if not text.strip():
         raise HTTPException(status_code=400, detail="Text is required")
@@ -117,8 +116,12 @@ async def speak(
                 if item is None:
                     break
                 style_prompt, chunk_text = item
-                prompt = f"{style_prompt}\n\n{chunk_text}"
-                async for audio_chunk in _ollama_stream(prompt, ollama_port, model):
+                async for audio_chunk in _tts_stream(
+                    chunk_text,
+                    style_prompt,
+                    speaker,
+                    tts_port,
+                ):
                     yield audio_chunk
         finally:
             producer_task.cancel()

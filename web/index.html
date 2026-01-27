@@ -107,12 +107,8 @@
 
         <div class="grid">
           <div>
-            <label for="port">Ollama Port</label>
-            <input id="port" type="number" value="11434" min="1" max="65535" />
-          </div>
-          <div>
-            <label for="model">Ollama Model</label>
-            <input id="model" type="text" value="qwen3-tts" />
+            <label for="port">TTS Server Port</label>
+            <input id="port" type="number" value="5000" min="1" max="65535" />
           </div>
           <div>
             <label for="speaker">Speaker</label>
@@ -145,7 +141,6 @@
       const statusBadge = document.getElementById("status");
       const detail = document.getElementById("detail");
       const portInput = document.getElementById("port");
-      const modelInput = document.getElementById("model");
       const speakerInput = document.getElementById("speaker");
       const textInput = document.getElementById("text");
       const player = document.getElementById("player");
@@ -153,10 +148,6 @@
       let controller = null;
       let audioCtx = null;
       let source = null;
-      let mediaSource = null;
-      let sourceBuffer = null;
-      let streamQueue = [];
-      let streaming = false;
 
       function setStatus(label, info) {
         statusBadge.textContent = label;
@@ -177,8 +168,7 @@
         controller = new AbortController();
         const params = new URLSearchParams({
           text,
-          ollama_port: portInput.value || "11434",
-          model: modelInput.value || "qwen3-tts",
+          tts_port: portInput.value || "5000",
           speaker: speakerInput.value || "Male_Narrator",
         });
 
@@ -193,76 +183,12 @@
           }
 
           const contentType = response.headers.get("content-type") || "";
-          if (window.MediaSource && MediaSource.isTypeSupported("audio/mpeg")) {
-            setStatus("Streaming", "Streaming audio... (MediaSource)");
-            startMediaSourceStream(response.body);
-          } else {
-            setStatus("Streaming", "Receiving audio bytes...");
-            await bufferAndPlay(response.body, contentType);
-          }
+          setStatus("Streaming", "Receiving audio bytes...");
+          await bufferAndPlay(response.body, contentType);
         } catch (err) {
           setStatus("Error", err.message || "Streaming failed");
           stop();
         }
-      }
-
-      function startMediaSourceStream(readableStream) {
-        mediaSource = new MediaSource();
-        player.src = URL.createObjectURL(mediaSource);
-        streaming = true;
-
-        mediaSource.addEventListener("sourceopen", async () => {
-          try {
-            sourceBuffer = mediaSource.addSourceBuffer("audio/mpeg");
-          } catch (_) {
-            setStatus("Error", "MediaSource audio/mpeg not supported");
-            stop();
-            return;
-          }
-
-          const reader = readableStream.getReader();
-          sourceBuffer.addEventListener("updateend", appendNextChunk);
-
-          while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            if (value && value.length) {
-              streamQueue.push(value);
-              appendNextChunk();
-            }
-          }
-
-          await waitForQueueDrain();
-          if (mediaSource.readyState === "open") {
-            mediaSource.endOfStream();
-          }
-          setStatus("Playing", "Audio playback started");
-        });
-      }
-
-      function appendNextChunk() {
-        if (!sourceBuffer || sourceBuffer.updating) return;
-        if (!streamQueue.length) return;
-        const chunk = streamQueue.shift();
-        try {
-          sourceBuffer.appendBuffer(chunk);
-        } catch (err) {
-          setStatus("Error", "Stream append failed. Falling back.");
-          stop();
-        }
-      }
-
-      function waitForQueueDrain() {
-        return new Promise((resolve) => {
-          const check = () => {
-            if (!streamQueue.length && (!sourceBuffer || !sourceBuffer.updating)) {
-              resolve();
-              return;
-            }
-            setTimeout(check, 50);
-          };
-          check();
-        });
       }
 
       async function bufferAndPlay(readableStream, contentType) {
@@ -314,9 +240,6 @@
         if (audioCtx) {
           audioCtx.close();
         }
-        if (mediaSource && mediaSource.readyState === "open") {
-          try { mediaSource.endOfStream(); } catch (_) {}
-        }
         if (player) {
           player.pause();
           player.removeAttribute("src");
@@ -325,10 +248,6 @@
         controller = null;
         source = null;
         audioCtx = null;
-        mediaSource = null;
-        sourceBuffer = null;
-        streamQueue = [];
-        streaming = false;
         playBtn.disabled = false;
         stopBtn.disabled = true;
         setStatus("Idle", "");
