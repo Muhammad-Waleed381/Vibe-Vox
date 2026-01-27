@@ -41,17 +41,68 @@ Building this required solving three core ML Engineering problems:
 ## 🚀 Quick Start
 
 ### Prerequisites
-* NVIDIA GPU (6GB+ VRAM recommended) or Mac M-Series (MPS).
-* Python 3.10+
-* FFmpeg installed on system path.
+* NVIDIA GPU (8GB+ VRAM recommended for 1.7B model, 4GB+ for 0.6B model) or Mac M-Series (MPS)
+* Python 3.10+ (Python 3.12 recommended)
+* FFmpeg installed on system path
+* GROQ API key for sentiment analysis
 
 ### Installation
 ```bash
 git clone https://github.com/Muhammad-Waleed381/Vibe-Vox.git
 cd Vibe-Vox
+
+# Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install PyTorch with CUDA support
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Install Flash Attention (this takes 5-15 minutes)
+pip install flash-attn --no-build-isolation
+
+# Install remaining dependencies
 pip install -r requirements.txt
+
+# Download NLTK data
 python -m nltk.downloader punkt
 ```
+
+### Running the System
+
+**Set your GROQ API key:**
+```bash
+export GROQ_API_KEY='your-api-key-here'
+```
+
+**Option 1: One-Command Startup (Recommended)**
+```bash
+./start_vibevox.sh
+```
+
+**Option 2: Manual Startup**
+```bash
+# Terminal 1 - Start TTS Server
+python tts_server.py
+
+# Terminal 2 - Start Web Server
+python -m web.app
+```
+
+**Access the system:**
+- Web UI: http://localhost:8000/
+- TTS Server Health: http://localhost:5000/health
+- API Health: http://localhost:8000/api/health
+
+### Quick Test
+```bash
+# Test the complete pipeline
+curl -X POST "http://localhost:8000/api/speak?text=The+storm+raged+outside" \
+  --output test.wav && aplay test.wav
+```
+
+**📖 For detailed setup instructions, troubleshooting, and examples, see [SETUP_GUIDE.md](SETUP_GUIDE.md)**
+
 
 ## 🔎 Semantic Chunking (MVP)
 
