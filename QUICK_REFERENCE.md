@@ -44,6 +44,22 @@ curl http://localhost:8000/api/health
 # Full Pipeline (Text → Analysis → TTS)
 curl -X POST "http://localhost:8000/api/speak?text=Your+text+here" \
   --output output.wav
+
+# Live Stream (NDJSON; used by Web UI)
+curl -N -X POST http://localhost:8000/api/speak_stream \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Your text here","tts_port":5000,"speaker":"Male_Narrator","groq_model":"llama-3.1-8b-instant"}'
+
+# Export Audiobook (async job)
+curl -X POST http://localhost:8000/api/export \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Your text here","tts_port":5000,"speaker":"Male_Narrator","groq_model":"llama-3.1-8b-instant","crossfade_ms":50}'
+
+# Poll status
+curl http://localhost:8000/api/export/<job_id>
+
+# Download WAV
+curl -L http://localhost:8000/api/export/<job_id>/download --output audiobook.wav
 ```
 
 ---
@@ -206,6 +222,8 @@ tail -f logs/web_server.log
 - **API Health:** http://localhost:8000/api/health
 - **TTS Endpoint:** http://localhost:5000/tts
 - **Speak Endpoint:** http://localhost:8000/api/speak
+- **Speak Stream:** http://localhost:8000/api/speak_stream
+- **Export Job:** http://localhost:8000/api/export
 
 ---
 

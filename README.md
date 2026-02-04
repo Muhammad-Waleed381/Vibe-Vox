@@ -153,6 +153,29 @@ curl -X POST "http://localhost:8000/api/speak?text=The+haunted+mansion+loomed+be
   --output full_pipeline_test.wav
 ```
 
+### 4. Live Playback (Streamed)
+
+The Web UI uses a streaming endpoint that starts playback as soon as the first chunk is ready.
+
+```bash
+curl -N -X POST http://localhost:8000/api/speak_stream \
+  -H "Content-Type: application/json" \
+  -d '{"text":"The hallway was quiet. He paused, listening for any sound.","tts_port":5000,"speaker":"Male_Narrator","groq_model":"llama-3.1-8b-instant"}'
+```
+
+### 5. Export a Full Audiobook (WAV)
+
+Exports run as an async job and write a stitched WAV to `exports/`.
+
+```bash
+curl -X POST http://localhost:8000/api/export \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Your long text here","tts_port":5000,"speaker":"Male_Narrator","groq_model":"llama-3.1-8b-instant","crossfade_ms":50}'
+
+curl http://localhost:8000/api/export/<job_id>
+curl -L http://localhost:8000/api/export/<job_id>/download --output audiobook.wav
+```
+
 ## 🔎 Code Examples
 
 ### Semantic Chunking (MVP)

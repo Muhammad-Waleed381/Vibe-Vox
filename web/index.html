@@ -103,7 +103,7 @@
     <div class="wrap">
       <div class="panel">
         <h1>VibeVox MVP</h1>
-        <p>Stream local Qwen TTS from Ollama. Paste text and play.</p>
+        <p>Live adaptive narration: text → emotion → style prompt → Qwen3-TTS, streamed as it’s generated.</p>
 
         <div class="grid">
           <div>
@@ -114,6 +114,14 @@
             <label for="speaker">Speaker</label>
             <input id="speaker" type="text" value="Male_Narrator" />
           </div>
+          <div>
+            <label for="groq_model">Groq Model</label>
+            <input id="groq_model" type="text" value="llama-3.1-8b-instant" />
+          </div>
+          <div>
+            <label for="crossfade">Crossfade (ms)</label>
+            <input id="crossfade" type="number" value="50" min="0" max="500" />
+          </div>
         </div>
 
         <div>
@@ -122,8 +130,9 @@
         </div>
 
         <div class="actions" style="margin-top: 16px;">
-          <button id="play">Play</button>
+          <button id="live">Live Play</button>
           <button id="stop" disabled>Stop</button>
+          <button id="export">Export Audiobook</button>
           <span class="badge" id="status">Idle</span>
         </div>
 
@@ -131,50 +140,155 @@
           <audio id="player" controls style="width: 100%;"></audio>
         </div>
 
+        <div class="status" style="margin-top: 10px;">
+          <a id="download" href="#" style="display: none;">Download export</a>
+        </div>
         <div class="status" id="detail"></div>
       </div>
     </div>
 
     <script>
-      const playBtn = document.getElementById("play");
+      const liveBtn = document.getElementById("live");
       const stopBtn = document.getElementById("stop");
+      const exportBtn = document.getElementById("export");
       const statusBadge = document.getElementById("status");
       const detail = document.getElementById("detail");
+      const downloadLink = document.getElementById("download");
       const portInput = document.getElementById("port");
       const speakerInput = document.getElementById("speaker");
+      const groqModelInput = document.getElementById("groq_model");
+      const crossfadeInput = document.getElementById("crossfade");
       const textInput = document.getElementById("text");
       const player = document.getElementById("player");
 
       let controller = null;
       let audioCtx = null;
-      let source = null;
+      let nextStartTime = 0;
+      let sources = [];
+      let exportPoll = null;
+      let exportJobId = null;
 
       function setStatus(label, info) {
         statusBadge.textContent = label;
         detail.textContent = info || "";
       }
 
-      async function play() {
+      function clearDownload() {
+        if (!downloadLink) return;
+        downloadLink.style.display = "none";
+        downloadLink.href = "#";
+        downloadLink.removeAttribute("download");
+      }
+
+      function setDownload(url, filename) {
+        if (!downloadLink) return;
+        downloadLink.style.display = "inline-block";
+        downloadLink.href = url;
+        if (filename) downloadLink.setAttribute("download", filename);
+      }
+
+      function decodeBase64ToBytes(b64) {
+        const binary = atob(b64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes;
+      }
+
+      function stopAudio() {
+        for (const node of sources) {
+          try { node.stop(); } catch (_) {}
+        }
+        sources = [];
+        nextStartTime = 0;
+        if (audioCtx) {
+          try { audioCtx.close(); } catch (_) {}
+        }
+        audioCtx = null;
+      }
+
+      function stopExportPolling() {
+        if (exportPoll) {
+          clearInterval(exportPoll);
+          exportPoll = null;
+        }
+        exportJobId = null;
+      }
+
+      function stop() {
+        if (controller) controller.abort();
+        controller = null;
+        stopExportPolling();
+        stopAudio();
+        clearDownload();
+        if (player) {
+          player.pause();
+          player.removeAttribute("src");
+          player.load();
+        }
+        liveBtn.disabled = false;
+        exportBtn.disabled = false;
+        stopBtn.disabled = true;
+        setStatus("Idle", "");
+      }
+
+      function getCrossfadeSeconds() {
+        const ms = Number(crossfadeInput.value || "50");
+        if (!Number.isFinite(ms)) return 0.05;
+        return Math.max(0, Math.min(ms, 500)) / 1000.0;
+      }
+
+      function scheduleBuffer(audioBuffer, crossfadeSec) {
+        if (!audioCtx) return;
+        const now = audioCtx.currentTime;
+        const fade = Math.min(crossfadeSec, audioBuffer.duration / 2);
+        const startAt = Math.max(nextStartTime ? (nextStartTime - fade) : (now + 0.05), now + 0.02);
+        nextStartTime = startAt + audioBuffer.duration;
+
+        const source = audioCtx.createBufferSource();
+        source.buffer = audioBuffer;
+
+        const gain = audioCtx.createGain();
+        gain.gain.setValueAtTime(0, startAt);
+        gain.gain.linearRampToValueAtTime(1, startAt + fade);
+        gain.gain.setValueAtTime(1, Math.max(startAt + fade, nextStartTime - fade));
+        gain.gain.linearRampToValueAtTime(0, nextStartTime);
+
+        source.connect(gain).connect(audioCtx.destination);
+        source.start(startAt);
+        sources.push(source);
+      }
+
+      async function livePlay() {
+        stop();
         const text = textInput.value.trim();
         if (!text) {
           setStatus("Error", "Text is required");
           return;
         }
 
-        playBtn.disabled = true;
+        liveBtn.disabled = true;
+        exportBtn.disabled = true;
         stopBtn.disabled = false;
-        setStatus("Streaming", "Connecting to local Ollama...");
+        setStatus("Connecting", "Starting live stream...");
 
         controller = new AbortController();
-        const params = new URLSearchParams({
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        await audioCtx.resume();
+
+        const payload = {
           text,
-          tts_port: portInput.value || "5000",
+          tts_port: Number(portInput.value || "5000"),
           speaker: speakerInput.value || "Male_Narrator",
-        });
+          groq_model: groqModelInput.value || "llama-3.1-8b-instant",
+        };
 
         try {
-          const response = await fetch(`/api/speak?${params.toString()}`, {
+          const response = await fetch(`/api/speak_stream`, {
             method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
             signal: controller.signal,
           });
           if (!response.ok) {
@@ -182,79 +296,137 @@
             throw new Error(errorText || "Failed to stream audio");
           }
 
-          const contentType = response.headers.get("content-type") || "";
-          setStatus("Streaming", "Receiving audio bytes...");
-          await bufferAndPlay(response.body, contentType);
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          let chunkCount = null;
+          let chunksSeen = 0;
+          const crossfadeSec = getCrossfadeSeconds();
+
+          setStatus("Streaming", "Waiting for first chunk...");
+
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            while (true) {
+              const nl = buffer.indexOf("\n");
+              if (nl === -1) break;
+              const line = buffer.slice(0, nl).trim();
+              buffer = buffer.slice(nl + 1);
+              if (!line) continue;
+
+              const msg = JSON.parse(line);
+              if (msg.type === "meta") {
+                chunkCount = msg.chunk_count;
+                setStatus("Streaming", `Preparing ${chunkCount} chunks...`);
+                continue;
+              }
+              if (msg.type === "chunk") {
+                chunksSeen += 1;
+                setStatus("Playing", chunkCount ? `Chunk ${chunksSeen}/${chunkCount}` : `Chunk ${chunksSeen}`);
+
+                const bytes = decodeBase64ToBytes(msg.audio_b64);
+                const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+                const audioBuffer = await audioCtx.decodeAudioData(ab);
+                scheduleBuffer(audioBuffer, crossfadeSec);
+                continue;
+              }
+              if (msg.type === "done") {
+                setStatus("Playing", "Stream complete (finishing playback)");
+                liveBtn.disabled = false;
+                exportBtn.disabled = false;
+                if (sources.length) {
+                  const last = sources[sources.length - 1];
+                  last.onended = () => stop();
+                } else {
+                  stop();
+                }
+                return;
+              }
+              if (msg.type === "error") {
+                throw new Error(msg.error || "Stream error");
+              }
+            }
+          }
         } catch (err) {
-          setStatus("Error", err.message || "Streaming failed");
           stop();
+          setStatus("Error", err.message || "Streaming failed");
         }
       }
 
-      async function bufferAndPlay(readableStream, contentType) {
-        const reader = readableStream.getReader();
-        const chunks = [];
-        let total = 0;
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          if (value) {
-            chunks.push(value);
-            total += value.length;
-          }
-        }
-
-        setStatus("Decoding", `Received ${total} bytes. Decoding...`);
-        const buffer = new Uint8Array(total);
-        let offset = 0;
-        for (const chunk of chunks) {
-          buffer.set(chunk, offset);
-          offset += chunk.length;
-        }
-
-        if (contentType.startsWith("audio/") && player) {
-          const blob = new Blob([buffer], { type: contentType });
-          player.src = URL.createObjectURL(blob);
-          await player.play();
-          setStatus("Playing", "Audio playback started");
+      async function exportAudiobook() {
+        stop();
+        const text = textInput.value.trim();
+        if (!text) {
+          setStatus("Error", "Text is required");
           return;
         }
 
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const audioBuffer = await audioCtx.decodeAudioData(buffer.buffer);
-        source = audioCtx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(audioCtx.destination);
-        source.start(0);
-        setStatus("Playing", "Audio playback started");
-        source.onended = () => stop();
+        liveBtn.disabled = true;
+        exportBtn.disabled = true;
+        stopBtn.disabled = false;
+        setStatus("Export", "Starting export job...");
+
+        controller = new AbortController();
+        const payload = {
+          text,
+          tts_port: Number(portInput.value || "5000"),
+          speaker: speakerInput.value || "Male_Narrator",
+          groq_model: groqModelInput.value || "llama-3.1-8b-instant",
+          crossfade_ms: Number(crossfadeInput.value || "50"),
+        };
+
+        try {
+          const response = await fetch(`/api/export`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+            signal: controller.signal,
+          });
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText || "Failed to start export");
+          }
+          const job = await response.json();
+          exportJobId = job.job_id;
+
+          exportPoll = setInterval(async () => {
+            try {
+              const st = await fetch(`/api/export/${exportJobId}`);
+              const data = await st.json();
+              if (data.status === "error") {
+                throw new Error(data.error || "Export failed");
+              }
+              if (data.status === "done") {
+                clearInterval(exportPoll);
+                exportPoll = null;
+                const url = data.download_url;
+                setStatus("Ready", "Export complete");
+                setDownload(url, `vibevox_${exportJobId}.wav`);
+                controller = null;
+                liveBtn.disabled = false;
+                exportBtn.disabled = false;
+                stopBtn.disabled = true;
+                return;
+              }
+              const total = data.chunk_total || 0;
+              const done = data.chunk_done || 0;
+              setStatus("Export", total ? `Rendering ${done}/${total} chunks...` : "Rendering...");
+            } catch (e) {
+              stop();
+              setStatus("Error", e.message || "Export failed");
+            }
+          }, 1000);
+        } catch (err) {
+          stop();
+          setStatus("Error", err.message || "Export failed");
+        }
       }
 
-      function stop() {
-        if (controller) {
-          controller.abort();
-        }
-        if (source) {
-          try { source.stop(); } catch (_) {}
-        }
-        if (audioCtx) {
-          audioCtx.close();
-        }
-        if (player) {
-          player.pause();
-          player.removeAttribute("src");
-          player.load();
-        }
-        controller = null;
-        source = null;
-        audioCtx = null;
-        playBtn.disabled = false;
-        stopBtn.disabled = true;
-        setStatus("Idle", "");
-      }
-
-      playBtn.addEventListener("click", play);
+      liveBtn.addEventListener("click", livePlay);
       stopBtn.addEventListener("click", stop);
+      exportBtn.addEventListener("click", exportAudiobook);
     </script>
   </body>
 </html>
