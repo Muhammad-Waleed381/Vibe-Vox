@@ -6,6 +6,7 @@
 ![Model](https://img.shields.io/badge/Model-Qwen3_TTS-navy?style=for-the-badge)
 ![Pipeline](https://img.shields.io/badge/Architecture-Async_Pipeline-blue?style=for-the-badge)
 
+
 ## 📖 Overview
 **VibeVox-Core** is an open-source audio synthesis engine that moves beyond static Text-to-Speech. Unlike standard TTS systems that read an entire document in a monotone "reading voice," VibeVox analyzes the **semantic sentiment** of the text stream and dynamically modulates the **prosody, pitch, and tone** of the voice model in real-time.
 
@@ -38,76 +39,125 @@ Building this required solving three core ML Engineering problems:
 * **Audio Processing:** `FFmpeg`, `Librosa`, `PyAudio`
 * **Optimization:** `BitsAndBytes` (4-bit quantization), `Accelerate`
 
-## 🚀 Quick Start
+## 🚀 Installation & Setup
 
-### Prerequisites
-* NVIDIA GPU (8GB+ VRAM recommended for 1.7B model, 4GB+ for 0.6B model) or Mac M-Series (MPS)
-* Python 3.10+ (Python 3.12 recommended)
-* FFmpeg installed on system path
-* GROQ API key for sentiment analysis
+### Step 1: Install Dependencies
 
-### Installation
+**Important:** Flash Attention requires significant compilation time. Install in order:
+
 ```bash
-git clone https://github.com/Muhammad-Waleed381/Vibe-Vox.git
-cd Vibe-Vox
-
-# Create and activate virtual environment
+# Activate your virtual environment first
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install PyTorch with CUDA support
+# Install PyTorch with CUDA (adjust for your CUDA version)
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
-# Install Flash Attention (this takes 5-15 minutes)
+# Install Flash Attention (this will take 5-15 minutes)
 pip install flash-attn --no-build-isolation
 
 # Install remaining dependencies
 pip install -r requirements.txt
 
-# Download NLTK data
+# Download NLTK data (if not already done)
 python -m nltk.downloader punkt
 ```
 
-### Running the System
-
-**Set your GROQ API key:**
+**Note:** If you have less than 96GB RAM and many CPU cores, use:
 ```bash
-export GROQ_API_KEY='your-api-key-here'
+MAX_JOBS=4 pip install flash-attn --no-build-isolation
 ```
 
-**Option 1: One-Command Startup (Recommended)**
+### Step 2: Set Environment Variables
+
+```bash
+# Required: Your Groq API key for sentiment analysis
+export GROQ_API_KEY='your-groq-api-key-here'
+
+# Optional: Custom ports
+export TTS_PORT=5000      # Default TTS server port
+export VIBEVOX_PORT=8000  # Default web server port
+```
+
+### Step 3: First-Time Model Download
+
+The first time you run the TTS server, it will download the Qwen3-TTS model (~3.5GB). This happens automatically but may take 5-10 minutes depending on your internet speed.
+
+## 🎮 Running VibeVox
+
+### Option 1: Use the Startup Script (Recommended)
+
 ```bash
 ./start_vibevox.sh
 ```
 
-**Option 2: Manual Startup**
-```bash
-# Terminal 1 - Start TTS Server
-python tts_server.py
+This will:
+- ✅ Start the TTS server on port 5000
+- ✅ Start the web API on port 8000
+- ✅ Show status and log locations
+- ✅ Keep both running in the background
 
-# Terminal 2 - Start Web Server
+### Option 2: Run Servers Manually
+
+**Terminal 1 - TTS Server:**
+```bash
+python tts_server.py
+```
+
+**Terminal 2 - Web Server:**
+```bash
 python -m web.app
 ```
 
-**Access the system:**
-- Web UI: http://localhost:8000/
-- TTS Server Health: http://localhost:5000/health
-- API Health: http://localhost:8000/api/health
+## 🧪 Testing the System
 
-### Quick Test
+### 1. Check TTS Server Health
 ```bash
-# Test the complete pipeline
-curl -X POST "http://localhost:8000/api/speak?text=The+storm+raged+outside" \
-  --output test.wav && aplay test.wav
+curl http://localhost:5000/health
 ```
 
-**📖 For detailed setup instructions, troubleshooting, and examples, see [SETUP_GUIDE.md](SETUP_GUIDE.md)**
+Expected response:
+```json
+{
+  "status": "ok",
+  "model_loaded": true,
+  "model_id": "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+  "device": "cuda:0"
+}
+```
 
+### 2. Test Direct TTS Synthesis
 
-## 🔎 Semantic Chunking (MVP)
+```bash
+curl -X POST http://localhost:5000/tts \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "The hallway was quiet. He paused, listening for any sound.",
+    "style_prompt": "A deep male voice speaking slowly and quietly, as if revealing a secret.",
+    "language": "English"
+  }' \
+  --output test_audio.wav
+```
 
-Use the ingestion pipeline to split text into semantic chunks with
-model-accurate token budgets.
+Then play the audio:
+```bash
+aplay test_audio.wav  # Linux
+# or
+afplay test_audio.wav  # macOS
+```
+
+### 3. Test Full Pipeline (Analysis + TTS)
+
+```bash
+curl -X POST "http://localhost:8000/api/speak?text=The+haunted+mansion+loomed+before+them.+Sarah+felt+her+heart+racing." \
+  --output full_pipeline_test.wav
+```
+
+## 🔎 Code Examples
+
+### Semantic Chunking (MVP)
+
+Use the ingestion pipeline to split text into semantic chunks with model-accurate token budgets.
 
 ```python
 from ingestion import ingest_text
@@ -119,7 +169,7 @@ for chunk in chunks:
     print(chunk.chunk_id, chunk.token_count, chunk.text)
 ```
 
-## 🧠 Analysis Stage (Emotion + Intensity)
+### Analysis Stage (Emotion + Intensity)
 
 Run the analysis LLM on each chunk to get Emotion/Intensity labels.
 
@@ -133,7 +183,7 @@ for result in results:
     print(result.emotion, result.intensity, result.style_prompt.prompt)
 ```
 
-## 🎛️ Style Prompt Compiler
+### Style Prompt Compiler
 
 Map Emotion/Intensity to a TTS style prompt for Voice Design mode.
 
@@ -143,3 +193,74 @@ from style_prompt_compiler import compile_style_prompt
 style = compile_style_prompt("Suspense", "High", speaker="Male_Narrator")
 print(style.prompt)
 ```
+
+## 🎛️ Configuration Options
+
+### Model Variants
+
+You can change the TTS model in `tts_server.py`:
+
+```python
+# Current (best quality, more VRAM ~8GB)
+DEFAULT_MODEL_ID = "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign"
+
+# Faster alternative (less VRAM ~4GB)
+DEFAULT_MODEL_ID = "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice"
+```
+
+### GPU/CPU Selection
+
+The server auto-detects CUDA. To force CPU:
+```python
+DEFAULT_DEVICE = "cpu"
+DEFAULT_DTYPE = torch.float32
+```
+
+### Attention Mechanism
+
+If Flash Attention fails or you're on older GPUs:
+```python
+use_flash_attn = False  # Falls back to "eager" attention
+```
+
+## 🐛 Troubleshooting
+
+### Issue: "Model download is very slow"
+
+**Solution:** Use ModelScope (faster for some regions):
+```bash
+pip install modelscope
+modelscope download --model Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign --local_dir ./models/qwen3-tts
+```
+
+Then update `tts_server.py`:
+```python
+DEFAULT_MODEL_ID = "./models/qwen3-tts"
+```
+
+### Issue: "CUDA out of memory"
+
+**Solutions:**
+1. Use the 0.6B model instead of 1.7B
+2. Lower batch size in synthesis
+3. Use CPU (slower but works)
+
+### Issue: "Flash Attention won't compile"
+
+**Solution:** The server auto-falls back to eager attention. Or install pre-built wheels:
+```bash
+pip install flash-attn --no-build-isolation --no-cache-dir
+```
+
+### Issue: "TTS server returns 502 error"
+
+**Check:**
+1. Is TTS server running? `curl http://localhost:5000/health`
+2. Check TTS logs: `tail -f logs/tts_server.log`
+3. Verify CUDA is available: `python -c "import torch; print(torch.cuda.is_available())"`
+
+## 📚 Resources
+
+- [Qwen3-TTS Official Repo](https://github.com/QwenLM/Qwen3-TTS)
+- [Qwen3-TTS Documentation](https://qwen.ai/qwen3-tts)
+- [Voice Design Examples](https://github.com/QwenLM/Qwen3-TTS/tree/main/examples)
