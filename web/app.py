@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import AsyncGenerator, Optional
-import os
+from typing import Optional
 import asyncio
+import io
+import os
 
 import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
+from pydub import AudioSegment
 
 from dialogue_detection import has_dialogue
 from groq_client import analyze_text_groq, load_groq_config
@@ -23,6 +25,7 @@ INDEX_PATH = APP_DIR / "index.html"
 DEFAULT_TTS_PORT = 5000
 DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant"
 DEFAULT_SPEAKER = "Male_Narrator"
+DEFAULT_CROSSFADE_MS = 50
 
 app = FastAPI(title="VibeVox MVP")
 
@@ -43,12 +46,12 @@ def _build_tts_url(port: int) -> str:
     return f"http://localhost:{port}/tts"
 
 
-async def _tts_stream(
+async def _fetch_tts_audio(
     text: str,
     style_prompt: str,
     speaker: str,
     port: int,
-) -> AsyncGenerator[bytes, None]:
+) -> bytes:
     url = _build_tts_url(port)
     payload = {
         "text": text,
@@ -58,16 +61,43 @@ async def _tts_stream(
 
     timeout = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=10.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
-        async with client.stream("POST", url, json=payload) as response:
-            if response.status_code != 200:
-                detail = await response.aread()
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"TTS server error: {detail.decode('utf-8', 'ignore')}",
-                )
-            async for chunk in response.aiter_bytes():
-                if chunk:
-                    yield chunk
+        response = await client.post(url, json=payload)
+        await response.aread()
+        if response.status_code != 200:
+            detail = response.text
+            raise HTTPException(
+                status_code=502,
+                detail=f"TTS server error: {detail}",
+            )
+        return response.content
+
+
+def _decode_wav(audio_bytes: bytes) -> AudioSegment:
+    return AudioSegment.from_file(io.BytesIO(audio_bytes), format="wav")
+
+
+def _match_segment_format(segment: AudioSegment, reference: AudioSegment) -> AudioSegment:
+    if segment.frame_rate != reference.frame_rate:
+        segment = segment.set_frame_rate(reference.frame_rate)
+    if segment.sample_width != reference.sample_width:
+        segment = segment.set_sample_width(reference.sample_width)
+    if segment.channels != reference.channels:
+        segment = segment.set_channels(reference.channels)
+    return segment
+
+
+def _stitch_wav_segments(segments: list[bytes], crossfade_ms: int) -> bytes:
+    if len(segments) == 1:
+        return segments[0]
+    combined = _decode_wav(segments[0])
+    for raw in segments[1:]:
+        next_segment = _decode_wav(raw)
+        next_segment = _match_segment_format(next_segment, combined)
+        fade_ms = min(crossfade_ms, len(combined), len(next_segment))
+        combined = combined.append(next_segment, crossfade=fade_ms)
+    output = io.BytesIO()
+    combined.export(output, format="wav")
+    return output.getvalue()
 
 
 @app.post("/api/speak")
@@ -107,27 +137,31 @@ async def speak(
         finally:
             await queue.put(None)
 
-    async def pipeline_stream() -> AsyncGenerator[bytes, None]:
-        queue: asyncio.Queue[Optional[tuple[str, str]]] = asyncio.Queue(maxsize=2)
-        producer_task = asyncio.create_task(producer(queue))
-        try:
-            while True:
-                item = await queue.get()
-                if item is None:
-                    break
-                style_prompt, chunk_text = item
-                async for audio_chunk in _tts_stream(
-                    chunk_text,
-                    style_prompt,
-                    speaker,
-                    tts_port,
-                ):
-                    yield audio_chunk
-        finally:
-            producer_task.cancel()
+    queue: asyncio.Queue[Optional[tuple[str, str]]] = asyncio.Queue(maxsize=2)
+    producer_task = asyncio.create_task(producer(queue))
+    segments: list[bytes] = []
+    try:
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            style_prompt, chunk_text = item
+            audio_bytes = await _fetch_tts_audio(
+                chunk_text,
+                style_prompt,
+                speaker,
+                tts_port,
+            )
+            segments.append(audio_bytes)
+    finally:
+        producer_task.cancel()
 
+    if not segments:
+        raise HTTPException(status_code=500, detail="No audio segments generated")
+
+    stitched_audio = _stitch_wav_segments(segments, crossfade_ms=DEFAULT_CROSSFADE_MS)
     return StreamingResponse(
-        pipeline_stream(),
+        io.BytesIO(stitched_audio),
         media_type=audio_mime,
     )
 
