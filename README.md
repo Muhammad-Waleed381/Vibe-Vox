@@ -10,7 +10,7 @@
 ## 📖 Overview
 **VibeVox-Core** is an open-source audio synthesis engine that moves beyond static Text-to-Speech. Unlike standard TTS systems that read an entire document in a monotone "reading voice," VibeVox analyzes the **semantic sentiment** of the text stream and dynamically modulates the **prosody, pitch, and tone** of the voice model in real-time.
 
-It utilizes a producer-consumer architecture to chain a lightweight analysis LLM (Qwen2.5-0.5B) with a high-fidelity diffusion TTS model (Qwen3-TTS), ensuring the voice sounds "Scared" when the text is scary, and "Elated" when the text is happy—without breaking the latency budget.
+It utilizes a producer-consumer architecture to chain a Groq-hosted analysis LLM with a high-fidelity diffusion TTS model (Qwen3-TTS), ensuring the voice sounds "Scared" when the text is scary, and "Elated" when the text is happy—without breaking the latency budget.
 
 ## 🛠️ The "Why" (Engineering Challenges)
 Building this required solving three core ML Engineering problems:
@@ -21,7 +21,7 @@ Building this required solving three core ML Engineering problems:
 ## 🏗️ Architecture
 
 1.  **Ingestion:** Text is semantically chunked (sentence/paragraph level).
-2.  **The Brain (Analysis):** `Qwen2.5-0.5B-Instruct` analyzes the chunk for two vectors:
+2.  **The Brain (Analysis):** A Groq-hosted LLM analyzes the chunk for two vectors:
     * *Emotion:* (e.g., "Suspense")
     * *Intensity:* (e.g., "High")
 3.  **The Compiler:** A mapping layer converts vectors into a **Style Prompt**.
@@ -35,7 +35,7 @@ Building this required solving three core ML Engineering problems:
 * **Core Inference:** `PyTorch`, `HuggingFace Transformers`
 * **Models:**
     * TTS: `Qwen/Qwen3-TTS` (Voice Design Mode)
-    * NLP: `Qwen/Qwen2.5-0.5B-Instruct` (Quantized INT8)
+    * NLP: Groq-hosted LLM (defaults to `llama-3.1-8b-instant`)
 * **Audio Processing:** `FFmpeg`, `Librosa`, `PyAudio`
 * **Optimization:** `BitsAndBytes` (4-bit quantization), `Accelerate`
 
