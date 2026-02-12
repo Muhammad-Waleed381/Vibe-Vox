@@ -1,110 +1,74 @@
-# VibeVox-Core 🎙️⚡
+# VibeVox: AI Voice Cloning & Emotion Engine 🎙️⚡
 
-> **Adaptive Text-to-Speech Engine with Semantic Sentiment Modulation**
+> **Clone Your Voice. Perform Any Emotion. Read Anything.**
 
-![Project Status](https://img.shields.io/badge/Status-Active_Development-electricorange?style=for-the-badge)
-![Model](https://img.shields.io/badge/Model-Qwen3_TTS-navy?style=for-the-badge)
-![Pipeline](https://img.shields.io/badge/Architecture-Async_Pipeline-blue?style=for-the-badge)
+![Status](https://img.shields.io/badge/Status-Beta-purple?style=for-the-badge)
+![Model](https://img.shields.io/badge/Core-Qwen3_TTS-navy?style=for-the-badge)
+![Capability](https://img.shields.io/badge/Voice-Cloning_%2B_Emotion-crimson?style=for-the-badge)
 
-VibeVox-Core is an open-source audio synthesis engine that moves beyond static Text-to-Speech. Unlike standard TTS systems that read an entire document in a monotone "reading voice," VibeVox analyzes the **semantic sentiment** of the text stream and dynamically modulates the **prosody, pitch, and tone** of the voice model in real-time.
+VibeVox is an advanced AI Web Application designed to democratize professional-grade voice synthesis. It allows anyone to **clone their own voice** using just a short sample and then use that digital twin to **perform text with deep emotional intelligence**.
 
-It utilizes a producer-consumer architecture to chain a Groq-hosted analysis LLM with a high-fidelity diffusion TTS model (Qwen3-TTS), ensuring the voice sounds "Scared" when the text is scary, and "Elated" when the text is happy—without breaking the latency budget.
+We solve the "robotic voice" problem by combining state-of-the-art Voice Cloning (Qwen3-TTS) with a semantic sentiment analysis engine (Llama 3.1) that directs *how* the cloned voice should feel—be it a terrified whisper or a jubilant shout.
 
-## 🚀 Quick Start
+## 🌟 Core Features (Vision)
 
-### 1. Install Dependencies
-**Important:** Flash Attention requires significant compilation time (5-15 mins). Install in this order:
+### 1. Zero-Shot Voice Cloning
+Upload a 10-second clip of your voice (or any voice you have rights to), and VibeVox instantly creates a high-fidelity digital replica. No training time required.
 
-```bash
-# Activate your virtual environment first
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+### 2. Emotion-Aware Performance
+Unlike standard TTS that drones on, VibeVox reads the room.
+- **Sad Text?** Your cloned voice breaks, pauses, and sighs.
+- **Action Scene?** Your cloned voice accelerates, projects, and intensifies.
+- **Dialogue?** It detects characters and switches styles automatically.
 
-# Install PyTorch with CUDA (adjust for your CUDA version)
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+### 3. Document ➔ Audiobook
+Upload a PDF, EPUB, or paste a full novel. VibeVox will process the entire document, applying the appropriate emotional subtext to every paragraph, and generate a seamless audiobook in *your* voice.
 
-# Install Flash Attention
-pip install flash-attn --no-build-isolation
+## 🏗️ Architecture
 
-# Install remaining dependencies
-pip install -r requirements.txt
+The system uses a producer-consumer agent architecture:
+1.  **Ingestion:** Breaks text/documents into semantic chunks.
+2.  **Director (Analysis):** Llama 3.1 reads the text to determine the emotion (e.g., "Suspense", "Joy").
+3.  **Compiler:** Translates the emotion into a complex style prompt for the TTS.
+4.  **Synthesizer:** Qwen3-TTS takes your **Reference Audio** and the **Style Prompt** to generate the speech.
+5.  **Studio (Web UI):** Streams the audio back to you in real-time or exports a full WAV file.
 
-# Download NLTK data (required for chunking)
-python -m nltk.downloader punkt
-```
+## 🚀 Getting Started
 
-**Note:** If you have less than 96GB RAM:
-```bash
-MAX_JOBS=4 pip install flash-attn --no-build-isolation
-```
+### Prerequisites
+- NVIDIA GPU (8GB+ VRAM recommended)
+- Python 3.10+
+- Groq API Key (for the "Director" agent)
 
-### 2. Set Environment Variables
-You need a Groq API key for the semantic analysis (Llama 3.1).
+### Installation
 
-```bash
-export GROQ_API_KEY='your-groq-api-key-here'
+1.  **Clone & Install:**
+    ```bash
+    # Create environment
+    python -m venv venv
+    source venv/bin/activate
 
-# Optional: Custom ports
-export TTS_PORT=5000      # Default TTS server port
-export VIBEVOX_PORT=8000  # Default web server port
-```
+    # Install Torch & Flash Attention (Required for speed)
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+    pip install flash-attn --no-build-isolation
+    pip install -r requirements.txt
+    python -m nltk.downloader punkt
+    ```
 
-### 3. Run VibeVox
-Use the provided startup script which handles both the TTS and Web servers:
+2.  **Configure:**
+    ```bash
+    export GROQ_API_KEY='your-key-here'
+    ```
 
-```bash
-./start_vibevox.sh
-```
+3.  **Launch:**
+    ```bash
+    ./start_vibevox.sh
+    ```
+    Access the Web UI at `http://localhost:8000`.
 
-This will:
-- ✅ Start the TTS server on port 5000 (first run downloads the ~3.5GB model)
-- ✅ Start the web API on port 8000
-- ✅ Show status and log locations
+## ⚠️ Current Limitations (Beta)
+- **Cloning Interface:** The UI currently relies on text descriptions for voice styling. **Audio upload for cloning is in active development.**
+- **Document Support:** PDF upload is planned; currently supports text paste.
 
-## 🎮 Usage
-
-### Web Interface
-Open your browser to [http://localhost:8000](http://localhost:8000) to access the VibeVox MVP interface.
-- **Live Play:** Enter text and hear it synthesize in real-time.
-- **Export:** Build a full audiobook with cross-faded transitions.
-
-### API Endpoints
-
-#### Live Streaming (NDJSON)
-```bash
-curl -N -X POST http://localhost:8000/api/speak_stream \
-  -H "Content-Type: application/json" \
-  -d '{"text":"The hallway was quiet...","tts_port":5000,"speaker":"Male_Narrator","groq_model":"llama-3.1-8b-instant"}'
-```
-
-#### Export Job (Async)
-```bash
-curl -X POST http://localhost:8000/api/export \
-  -H "Content-Type: application/json" \
-  -d '{"text":"Your long text here","crossfade_ms":50}'
-```
-
-## 🐛 Troubleshooting
-
-### "Model download is very slow"
-Use ModelScope (faster for some regions):
-```bash
-pip install modelscope
-modelscope download --model Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign --local_dir ./models/qwen3-tts
-```
-Then update `DEFAULT_MODEL_ID` in `tts_server.py`.
-
-### "CUDA out of memory"
-1. Use the 0.6B model instead of 1.7B in `tts_server.py`.
-2. Lower batch size in synthesis (though currently processed sequentially).
-3. Use CPU (slower but works).
-
-### "Flash Attention won't compile"
-The server auto-falls back to eager attention. Or install pre-built wheels:
-```bash
-pip install flash-attn --no-build-isolation --no-cache-dir
-```
-
-## 📚 Resources
-- **System Architecture:** See [AGENTS.md](AGENTS.md)
-- **Qwen3-TTS Official Repo:** [https://github.com/QwenLM/Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS)
+## 📚 Learn More
+See [AGENTS.md](AGENTS.md) for a detailed breakdown of the intelligent agents powering VibeVox.

@@ -1,43 +1,41 @@
-# VibeVox System Agents
+# VibeVox Agents: The Voice Cloning & Emotion Pipeline
 
-The VibeVox architecture is composed of five distinct agents that work together in a producer-consumer pipeline to transform raw text into emotionally resonant speech.
+VibeVox is built as a modular system of intelligent agents. These agents work together to enable the core promise of the platform: **taking a user's unique voice identity and infusing it with dynamic, context-aware emotion.**
 
 ## 1. The Ingestion Agent (`ingestion.py`)
-This is the entry point of the pipeline. Its primary responsibility is to break down large blocks of text into smaller, semantically meaningful units that can be processed individually.
-
-- **Role:** Text Pre-processor
-- **Key Task:** Semantic Chunking
-- **Logic:** It uses Natural Language Processing (NLTK) to identify sentence boundaries and group them into paragraphs, ensuring that no chunk exceeds the context window of the Analysis Agent while preserving narrative flow.
+**"The Reader"**
+This agent prepares the input for processing.
+- **Current Responsibilities:**
+    - Accepts raw text input from the web interface.
+    - Performs **Semantic Chunking**: slicing text into meaningful sentences/paragraphs to ensure emotions change naturally with the narrative flow, rather than sentence-by-sentence jerks.
+- **Future Capabilities (Planned):**
+    - **Document Parsing:** Will ingest PDF/EPUB/TXT files uploaded by the user to allow reading full books in their cloned voice.
 
 ## 2. The Analysis Agent (`analysis.py`)
-Serving as the "brain" of the operation, this agent determines *how* the text should be spoken.
-
-- **Role:** Sentiment & Context Analyst
-- **Powered By:** Groq (Llama 3.1 8B Instant)
-- **Key Task:** Emotion Tagging
-- **Output:** It assigns an `Emotion` (e.g., "Suspense", "Joy", "Anger") and an `Intensity` (High/Medium/Low) to each text chunk. It effectively reads between the lines to understand the subtext.
+**"The Director"**
+This agent reads the script and decides *how* it should be performed.
+- **Powered By:** Groq (Llama 3.1 8B).
+- **Role:** It performs deep sentiment analysis on every text chunk.
+- **Why it matters:** It doesn't just see text; it sees subtext. It instructs the system to speak a happy sentence with "Joy" and a scary one with "Suspense," ensuring the cloned voice acts the part.
 
 ## 3. The Compiler Agent (`style_prompt_compiler.py`)
-This agent acts as the translator between the abstract analysis and the concrete needs of the TTS engine.
-
-- **Role:** Prompt Engineer
-- **Key Task:** Style Mapping
-- **Process:** It takes the structured data from the Analysis Agent (e.g., `Emotion="Fear", Intensity="High"`) and converts it into a rich, natural language description that the TTS model can understand (e.g., *"A shaky, whispering voice, speaking quickly and with urgency"*).
+**"The Prompt Engineer"**
+This agent merges the "Who" (User's Voice) with the "How" (Emotion).
+- **Role:** It acts as the bridge between the high-level emotion tags (e.g., `Emotion="Fear"`) and the low-level TTS constraints.
+- **Critical Function:** It constructs the complex natural language prompts required by the Qwen3-TTS engine, effectively saying: *"Use [User's Cloned Voice] but modify it to sound breathy, fast, and terrified."*
 
 ## 4. The Synthesis Agent (`tts_server.py`)
-The "mouth" of VibeVox, this is a dedicated heavy-lifting server that runs the generative audio model.
-
-- **Role:** Audio Generator
-- **Powered By:** Qwen3-TTS (Voice Design Mode)
-- **Key Task:** Text-to-Speech Synthesis
-- **Performance:** optimized with Flash Attention 2 for low-latency generation. It maintains a consistent speaker identity ("Voice Anchor") while applying the dynamic style prompts from the Compiler Agent.
+**"The Voice Cloner"**
+The powerhouse of the system, running the Qwen3-TTS model.
+- **Current State:** Generates high-fidelity speech from text prompts ("Voice Design").
+- **Target State (Voice Cloning):** This agent is the primary target for upgrade. It needs to accept a **Reference Audio** (the user's voice sample) and perform Zero-Shot Voice Cloning *modulated* by the styling instructions from the Compiler Agent.
+- **Goal:** To reproduce the user's timbre and pitch while obeying the emotional direction.
 
 ## 5. The Orchestrator Agent (`web/app.py`)
-This is the user-facing interface that manages the flow of data between all other agents.
-
-- **Role:** System Controller & API Layer
-- **Key Task:** Pipeline Management
-- **Features:**
-    - **Live Streaming:** Pushes audio chunks to the client as soon as they are ready using Server-Sent Events (SSE).
-    - **Export Management:** Handles long-running audiobook generation jobs, stitching thousands of audio clips into a single coherent file with cross-fading.
-    - **Resource Management:** Ensures the GPU is fed efficiently without overlapping requests causing OOM errors.
+**"The Interface"**
+The bridge between the user and the AI pipeline.
+- **Role:** Manages the API and Web UI.
+- **Workflow:**
+    1.  **Input:** User uploads reference audio + text (or document).
+    2.  **Stream:** Pushes generated audio chunks back to the browser in real-time.
+    3.  **Export:** Stitches the final performance into a download-ready file.
