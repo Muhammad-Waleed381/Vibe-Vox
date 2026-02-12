@@ -36,9 +36,10 @@ The system uses a producer-consumer agent architecture:
 ## 🚀 Getting Started
 
 ### Prerequisites
-- NVIDIA GPU (8GB+ VRAM recommended)
-- Python 3.10+
-- Groq API Key (for the "Director" agent)
+- **GPU:** NVIDIA GPU with 12GB+ VRAM (for dual models) or 8GB (one at a time)
+- **Python:** 3.10+
+- **Disk:** 15GB free (models + cache)
+- **API:** Groq API Key (for the "Director" agent)
 
 ### Installation
 
