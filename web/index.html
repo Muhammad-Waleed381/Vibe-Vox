@@ -138,6 +138,20 @@
             </div>
         </div>
 
+        <div style="margin-bottom: 16px; padding: 16px; background: #fffaf3; border: 1px dashed #d9c8b5; border-radius: 12px;">
+            <label style="color: var(--accent-dark);">📄 Document Upload (PDF, EPUB, TXT)</label>
+            <div style="display: grid; grid-template-columns: 1fr auto; gap: 16px; margin-top: 8px;">
+                <div>
+                    <label for="doc_file" style="font-weight: normal; font-size: 13px;">Select a document file</label>
+                    <input id="doc_file" type="file" accept=".pdf,.epub,.txt,.text" />
+                </div>
+                <div style="display: flex; align-items: flex-end;">
+                    <button id="load_doc" style="background: var(--muted);">Load Document</button>
+                </div>
+            </div>
+            <div id="doc_info" class="status" style="margin-top: 8px; display: none;"></div>
+        </div>
+
         <div>
           <label for="text">Text to Speak</label>
           <textarea id="text">The hallway was quiet. He paused, listening for any sound.</textarea>
@@ -178,6 +192,9 @@
       const player = document.getElementById("player");
       const refAudioInput = document.getElementById("ref_audio");
       const refTextInput = document.getElementById("ref_text");
+      const docFileInput = document.getElementById("doc_file");
+      const loadDocBtn = document.getElementById("load_doc");
+      const docInfo = document.getElementById("doc_info");
 
       // ... (Helper functions remain same) ...
       let controller = null;
@@ -292,6 +309,41 @@
             };
             reader.onerror = error => reject(error);
         });
+      }
+
+      async function loadDocument() {
+        if (docFileInput.files.length === 0) {
+          setStatus("Error", "Please select a document file");
+          return;
+        }
+
+        const file = docFileInput.files[0];
+        setStatus("Parsing", "Reading document...");
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        try {
+          const response = await fetch("/api/parse_document", {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText || "Failed to parse document");
+          }
+
+          const data = await response.json();
+          textInput.value = data.text;
+          
+          docInfo.style.display = "block";
+          docInfo.textContent = `Loaded: ${data.filename} (${data.word_count} words)`;
+          
+          setStatus("Ready", `Document loaded: ${data.word_count} words`);
+        } catch (err) {
+          setStatus("Error", err.message || "Failed to load document");
+        }
       }
 
       async function livePlay() {
@@ -412,6 +464,7 @@
       liveBtn.addEventListener("click", livePlay);
       stopBtn.addEventListener("click", stop);
       exportBtn.addEventListener("click", exportAudiobook);
+      loadDocBtn.addEventListener("click", loadDocument);
     </script>
   </body>
 </html>

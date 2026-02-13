@@ -15,12 +15,13 @@ import uuid
 import httpx
 import numpy as np
 import soundfile as sf
-from fastapi import Body, FastAPI, HTTPException
+from fastapi import Body, FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 from pydub import AudioSegment
 
 from dialogue_detection import has_dialogue
+from document_parser import parse_document
 from groq_client import analyze_text_groq, load_groq_config
 from ingestion import ingest_text
 from style_prompt_compiler import compile_style_prompt
@@ -41,6 +42,32 @@ app = FastAPI(title="VibeVox MVP")
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+@app.post("/api/parse_document")
+async def parse_document_upload(file: UploadFile = File(...)):
+    """Parse uploaded document and return extracted text."""
+    try:
+        content = await file.read()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Failed to read file: {exc}")
+
+    try:
+        text = parse_document(content, file.filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except ImportError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    text_length = len(text)
+    word_count = len(text.split())
+
+    return {
+        "filename": file.filename,
+        "text": text,
+        "text_length": text_length,
+        "word_count": word_count,
+    }
 
 
 @app.get("/", response_class=HTMLResponse)
