@@ -97,6 +97,62 @@
         font-size: 12px;
         margin-left: 8px;
       }
+      .emotion-panel {
+        margin-top: 16px;
+        padding: 16px;
+        background: #faf8f5;
+        border: 1px solid #e3d5c3;
+        border-radius: 12px;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+      .emotion-panel h3 {
+        margin: 0 0 12px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+      .emotion-chip {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 12px;
+        margin: 3px;
+        background: #e8e0d5;
+      }
+      .emotion-chip.joy { background: #fff3cd; color: #856404; }
+      .emotion-chip.sadness { background: #d4edda; color: #155724; }
+      .emotion-chip.anger { background: #f8d7da; color: #721c24; }
+      .emotion-chip.fear { background: #e2e3e5; color: #383d41; }
+      .emotion-chip.excitement { background: #ffeeba; color: #856404; }
+      .emotion-chip.suspense { background: #d6d8d9; color: #1b1e21; }
+      .chunk-item {
+        padding: 8px;
+        margin: 4px 0;
+        border-radius: 6px;
+        background: #fff;
+        border-left: 3px solid var(--accent);
+        font-size: 13px;
+      }
+      .chunk-item.active {
+        background: #fff3e0;
+        border-left-color: var(--accent-dark);
+      }
+      .progress-bar {
+        height: 4px;
+        background: #e3d5c3;
+        border-radius: 2px;
+        margin-top: 8px;
+        overflow: hidden;
+      }
+      .progress-fill {
+        height: 100%;
+        background: var(--accent);
+        transition: width 0.3s ease;
+      }
+      .rate-slider {
+        width: 100%;
+        margin-top: 4px;
+      }
     </style>
   </head>
   <body>
@@ -121,6 +177,10 @@
           <div>
             <label for="crossfade">Crossfade (ms)</label>
             <input id="crossfade" type="number" value="50" min="0" max="500" />
+          </div>
+          <div>
+            <label for="rate">Speaking Rate: <span id="rate_value">1.0x</span></label>
+            <input id="rate" type="range" class="rate-slider" value="1.0" min="0.5" max="2.0" step="0.1" />
           </div>
         </div>
 
@@ -157,6 +217,16 @@
           <textarea id="text">The hallway was quiet. He paused, listening for any sound.</textarea>
         </div>
 
+        <div class="actions" style="margin-top: 12px;">
+          <button id="analyze">Analyze Emotions</button>
+        </div>
+
+        <div id="emotion_panel" class="emotion-panel" style="display: none;">
+          <h3>Emotion Analysis</h3>
+          <div id="emotion_summary"></div>
+          <div id="chunk_list" style="margin-top: 12px;"></div>
+        </div>
+
         <div class="actions" style="margin-top: 16px;">
           <button id="live">Live Clone & Play</button>
           <button id="stop" disabled>Stop</button>
@@ -167,6 +237,9 @@
         <!-- ... (Audio player and status divs remain same) ... -->
         <div style="margin-top: 12px;">
           <audio id="player" controls style="width: 100%;"></audio>
+        </div>
+        <div class="progress-bar">
+          <div id="progress_fill" class="progress-fill" style="width: 0%;"></div>
         </div>
 
         <div class="status" style="margin-top: 10px;">
@@ -195,6 +268,13 @@
       const docFileInput = document.getElementById("doc_file");
       const loadDocBtn = document.getElementById("load_doc");
       const docInfo = document.getElementById("doc_info");
+      const analyzeBtn = document.getElementById("analyze");
+      const emotionPanel = document.getElementById("emotion_panel");
+      const emotionSummary = document.getElementById("emotion_summary");
+      const chunkList = document.getElementById("chunk_list");
+      const rateInput = document.getElementById("rate");
+      const rateValue = document.getElementById("rate_value");
+      const progressFill = document.getElementById("progress_fill");
 
       // ... (Helper functions remain same) ...
       let controller = null;
@@ -203,6 +283,9 @@
       let sources = [];
       let exportPoll = null;
       let exportJobId = null;
+      let playbackRate = 1.0;
+      let currentChunkIndex = 0;
+      let totalChunks = 0;
 
       function setStatus(label, info) {
         statusBadge.textContent = label;
@@ -265,6 +348,10 @@
           player.removeAttribute("src");
           player.load();
         }
+        progressFill.style.width = "0%";
+        document.querySelectorAll(".chunk-item").forEach(el => el.classList.remove("active"));
+        currentChunkIndex = 0;
+        totalChunks = 0;
         liveBtn.disabled = false;
         exportBtn.disabled = false;
         stopBtn.disabled = true;
@@ -277,7 +364,7 @@
         return Math.max(0, Math.min(ms, 500)) / 1000.0;
       }
 
-      function scheduleBuffer(audioBuffer, crossfadeSec) {
+      function scheduleBuffer(audioBuffer, crossfadeSec, chunkIdx) {
         if (!audioCtx) return;
         const now = audioCtx.currentTime;
         const fade = Math.min(crossfadeSec, audioBuffer.duration / 2);
@@ -286,6 +373,7 @@
 
         const source = audioCtx.createBufferSource();
         source.buffer = audioBuffer;
+        source.playbackRate.value = playbackRate;
 
         const gain = audioCtx.createGain();
         gain.gain.setValueAtTime(0, startAt);
@@ -296,6 +384,8 @@
         source.connect(gain).connect(audioCtx.destination);
         source.start(startAt);
         sources.push(source);
+        
+        updateProgress(chunkIdx);
       }
 
       function fileToBase64(file) {
@@ -309,6 +399,79 @@
             };
             reader.onerror = error => reject(error);
         });
+      }
+
+      rateInput.addEventListener("input", () => {
+        playbackRate = parseFloat(rateInput.value);
+        rateValue.textContent = playbackRate.toFixed(1) + "x";
+        if (player) {
+          player.playbackRate = playbackRate;
+        }
+      });
+
+      async function analyzeEmotions() {
+        const text = textInput.value.trim();
+        if (!text) {
+          setStatus("Error", "Text is required");
+          return;
+        }
+
+        setStatus("Analyzing", "Detecting emotions...");
+        
+        try {
+          const response = await fetch("/api/analyze_text", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text,
+              groq_model: groqModelInput.value || "llama-3.1-8b-instant"
+            }),
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText || "Failed to analyze text");
+          }
+
+          const data = await response.json();
+          
+          emotionSummary.innerHTML = "";
+          for (const [emotion, count] of Object.entries(data.emotion_summary)) {
+            const chip = document.createElement("span");
+            chip.className = `emotion-chip ${emotion.toLowerCase()}`;
+            chip.textContent = `${emotion} (${count})`;
+            emotionSummary.appendChild(chip);
+          }
+
+          chunkList.innerHTML = "";
+          data.chunks.forEach((chunk, idx) => {
+            const item = document.createElement("div");
+            item.className = "chunk-item";
+            item.id = `chunk_${idx}`;
+            item.innerHTML = `<strong>${chunk.emotion}</strong> [${chunk.intensity}] - ${chunk.text}`;
+            chunkList.appendChild(item);
+          });
+
+          totalChunks = data.total_chunks;
+          currentChunkIndex = 0;
+          emotionPanel.style.display = "block";
+          setStatus("Ready", `Analyzed: ${data.total_chunks} chunks`);
+
+        } catch (err) {
+          setStatus("Error", err.message || "Failed to analyze emotions");
+        }
+      }
+
+      function updateProgress(chunkIdx) {
+        if (totalChunks > 0) {
+          const percent = ((chunkIdx + 1) / totalChunks) * 100;
+          progressFill.style.width = percent + "%";
+        }
+        
+        document.querySelectorAll(".chunk-item").forEach((el, idx) => {
+          el.classList.toggle("active", idx === chunkIdx);
+        });
+        currentChunkIndex = chunkIdx;
       }
 
       async function loadDocument() {
@@ -429,7 +592,7 @@
                 const bytes = decodeBase64ToBytes(msg.audio_b64);
                 const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
                 const audioBuffer = await audioCtx.decodeAudioData(ab);
-                scheduleBuffer(audioBuffer, crossfadeSec);
+                scheduleBuffer(audioBuffer, crossfadeSec, chunksSeen - 1);
                 continue;
               }
               if (msg.type === "done") {
@@ -465,6 +628,7 @@
       stopBtn.addEventListener("click", stop);
       exportBtn.addEventListener("click", exportAudiobook);
       loadDocBtn.addEventListener("click", loadDocument);
+      analyzeBtn.addEventListener("click", analyzeEmotions);
     </script>
   </body>
 </html>

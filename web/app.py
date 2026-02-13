@@ -44,6 +44,44 @@ def health():
     return {"status": "ok"}
 
 
+@app.post("/api/analyze_text")
+async def analyze_text_emotions(
+    text: str,
+    groq_model: str = DEFAULT_GROQ_MODEL,
+):
+    """Analyze text and return emotion breakdown for each chunk without generating audio."""
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="Text is required")
+
+    try:
+        groq_config = load_groq_config(groq_model)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    chunks = ingest_text(text, max_tokens=150)
+
+    results = []
+    for chunk in chunks:
+        emotion, intensity, _ = analyze_text_groq(chunk.text, groq_config)
+        results.append({
+            "chunk_id": chunk.chunk_id,
+            "text": chunk.text[:100] + "..." if len(chunk.text) > 100 else chunk.text,
+            "emotion": emotion,
+            "intensity": intensity,
+        })
+
+    emotion_counts = {}
+    for r in results:
+        e = r["emotion"]
+        emotion_counts[e] = emotion_counts.get(e, 0) + 1
+
+    return {
+        "chunks": results,
+        "total_chunks": len(chunks),
+        "emotion_summary": emotion_counts,
+    }
+
+
 @app.post("/api/parse_document")
 async def parse_document_upload(file: UploadFile = File(...)):
     """Parse uploaded document and return extracted text."""
