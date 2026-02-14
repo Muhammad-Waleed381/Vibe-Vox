@@ -80,21 +80,33 @@ class TTSServer:
             raise e
 
     def load_model(self):
-        """Load both Qwen3-TTS models (Base and VoiceDesign)."""
-        if self.model_base is not None and self.model_design is not None:
-            logger.info("Models already loaded.")
+        """Load Qwen3-TTS models based on configuration."""
+        should_load_base = os.environ.get("LOAD_BASE_MODEL", "true").lower() == "true"
+        should_load_design = os.environ.get("LOAD_DESIGN_MODEL", "true").lower() == "true"
+
+        if (not should_load_base or self.model_base is not None) and \
+           (not should_load_design or self.model_design is not None):
+            logger.info("Requested models already loaded.")
             return
 
         logger.info(f"Device: {self.device}, Dtype: {self.dtype}")
 
         try:
             # 1. Load Base Model (Cloning)
-            self.model_base = self._load_single_model(self.base_model_id)
-            logger.info("✓ Base (Cloning) Model loaded!")
+            if should_load_base:
+                if self.model_base is None:
+                    self.model_base = self._load_single_model(self.base_model_id)
+                    logger.info("✓ Base (Cloning) Model loaded!")
+            else:
+                logger.info("⏭️  Skipping Base Model (Cloning) to save memory.")
 
             # 2. Load Design Model (Styling)
-            self.model_design = self._load_single_model(self.design_model_id)
-            logger.info("✓ Design (Style) Model loaded!")
+            if should_load_design:
+                if self.model_design is None:
+                    self.model_design = self._load_single_model(self.design_model_id)
+                    logger.info("✓ Design (Style) Model loaded!")
+            else:
+                 logger.info("⏭️  Skipping Design Model (Styling) to save memory.")
 
         except Exception as e:
             logger.error(f"Critical error loading models: {e}")
@@ -121,14 +133,17 @@ class TTSServer:
         Returns:
             Tuple of (audio_bytes, sample_rate)
         """
-        if self.model_base is None or self.model_design is None:
-            raise RuntimeError("Models not loaded. Call load_model() first.")
+        if self.model_base is None and self.model_design is None:
+            raise RuntimeError("No models loaded. Check configuration.")
 
         logger.info(f"Synthesizing: '{text[:50]}...'")
 
         try:
             if reference_audio:
                 # --- Voice Cloning Mode (Base Model) ---
+                if self.model_base is None:
+                    raise HTTPException(status_code=400, detail="Voice Cloning (Base Model) is disabled on this server to save memory.")
+                
                 logger.info("✓ Mode: Voice Cloning (Base Model)")
                 audio_io = io.BytesIO(reference_audio)
                 wav, sr = sf.read(audio_io)
@@ -140,6 +155,9 @@ class TTSServer:
                 )
             else:
                 # --- Voice Design Mode (Design Model) ---
+                if self.model_design is None:
+                    raise HTTPException(status_code=400, detail="Voice Design (Style Model) is disabled on this server to save memory.")
+
                 logger.info("✓ Mode: Voice Design (Instruct Model)")
                 if not style_prompt:
                     raise ValueError("Style prompt required for Voice Design mode")
