@@ -359,6 +359,33 @@
       }
     }
 
+    /* Zen Mode */
+    body.zen-mode .zen-hide {
+      display: none !important;
+    }
+
+    body.zen-mode .panel {
+      border: none;
+      box-shadow: none;
+      background: transparent;
+      padding-top: 0;
+    }
+
+    body.zen-mode #text {
+      min-height: 50vh;
+      font-size: 18px;
+      line-height: 1.6;
+      border: 1px solid transparent;
+      background: rgba(255, 255, 255, 0.05);
+      /* subtle */
+    }
+
+    body.zen-mode #text:focus {
+      outline: none;
+      background: var(--bg);
+      border-color: var(--accent);
+    }
+
 
     @keyframes slideIn {
       from {
@@ -398,15 +425,19 @@
 <body>
   <div class="wrap">
     <div class="panel">
-      <button id="theme_toggle" class="theme-toggle" title="Toggle Theme">🌗</button>
+      <div style="position: absolute; top: 24px; right: 24px;">
+        <button id="zen_toggle" class="theme-toggle" style="margin-right: 8px;" title="Zen Mode">🧘</button>
+        <button id="theme_toggle" class="theme-toggle" title="Toggle Theme">🌗</button>
+      </div>
       <div id="toast-container"></div>
 
-      <h1>VibeVox MVP</h1>
-      <h1>VibeVox MVP</h1>
-      <p>Live adaptive narration: text → emotion → style prompt → Qwen3-TTS, streamed as it’s generated.</p>
+      <h1 class="zen-hide">VibeVox MVP</h1>
+      <h1 class="zen-hide">VibeVox MVP</h1>
+      <p class="zen-hide">Live adaptive narration: text → emotion → style prompt → Qwen3-TTS, streamed as it’s
+        generated.</p>
 
       <!-- Presets -->
-      <div style="margin-bottom: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
+      <div class="zen-hide" style="margin-bottom: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
         <span style="font-size: 13px; font-weight: 600; color: var(--muted); align-self: center;">Presets:</span>
         <button class="preset-btn" onclick="applyPreset('story')"
           style="padding: 4px 10px; font-size: 12px; background: #e3d5c3; color: #5a4a3a;">📖 Storyteller</button>
@@ -416,7 +447,7 @@
           style="padding: 4px 10px; font-size: 12px; background: #e3d5c3; color: #5a4a3a;">🤫 ASMR</button>
       </div>
 
-      <div class="grid">
+      <div class="grid zen-hide">
         <div>
           <label for="port">TTS Server Port</label>
           <input id="port" type="number" value="5000" min="1" max="65535" />
@@ -439,7 +470,7 @@
         </div>
       </div>
 
-      <div
+      <div class="zen-hide"
         style="margin-bottom: 16px; padding: 16px; background: var(--bg); border: 1px dashed #d9c8b5; border-radius: 12px;">
         <label style="color: var(--accent-dark);">🎙️ Voice Cloning (Override Speaker)</label>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px;">
@@ -460,7 +491,7 @@
         </div>
       </div>
 
-      <div
+      <div class="zen-hide"
         style="margin-bottom: 16px; padding: 16px; background: var(--bg); border: 1px dashed #d9c8b5; border-radius: 12px;">
         <label style="color: var(--accent-dark);">📄 Document Upload (PDF, EPUB, TXT)</label>
         <div style="display: grid; grid-template-columns: 1fr auto; gap: 16px; margin-top: 8px;">
@@ -477,7 +508,7 @@
 
       <div>
         <div style="display: flex; justify-content: space-between; align-items: baseline;">
-          <label for="text">Text to Speak</label>
+          <label for="text" class="zen-hide">Text to Speak</label>
           <div style="font-size: 13px;">
             <button id="dice_btn"
               style="padding: 2px 8px; margin-right: 4px; background: var(--muted); font-size: 12px;"
@@ -570,7 +601,6 @@
       const visualizer = document.getElementById("visualizer");
       const durationEstDisplay = document.getElementById("duration_est");
       const historyBtn = document.getElementById("history_btn");
-      const historyBtn = document.getElementById("history_btn");
       const volBoostInput = document.getElementById("vol_boost");
 
       // Round 2 Elements
@@ -578,6 +608,7 @@
       const recordStatus = document.getElementById("record_status");
       const diceBtn = document.getElementById("dice_btn");
       const karaokeDisplay = document.getElementById("karaoke_display");
+      const zenToggle = document.getElementById("zen_toggle");
       // exportBtn is already defined
 
       // --- Persistent Settings & Theme ---
@@ -655,6 +686,9 @@
       });
 
       themeToggleBtn.addEventListener("click", toggleTheme);
+      zenToggle.addEventListener("click", () => {
+        document.body.classList.toggle("zen-mode");
+      });
 
       // Shortcuts
       document.addEventListener("keydown", (e) => {
