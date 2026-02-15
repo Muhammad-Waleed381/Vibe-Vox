@@ -230,9 +230,7 @@
       transition: width 0.3s ease;
     }
 
-    width: 100%;
-    margin-top: 4px;
-    }
+
 
     .char-count {
       text-align: right;
@@ -264,6 +262,31 @@
 
     [data-theme="dark"] .theme-toggle:hover {
       background: rgba(255, 255, 255, 0.1);
+    }
+
+    /* Loading Spinner */
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: #fff;
+      animation: spin 0.8s ease-in-out infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    button.processing {
+      opacity: 0.8;
+      cursor: wait;
+      pointer-events: none;
     }
   </style>
 </head>
@@ -479,6 +502,19 @@
     let currentChunkIndex = 0;
     let totalChunks = 0;
 
+    // --- UI Helpers ---
+    function setBtnProcessing(btn, isProcessing, originalText) {
+      if (isProcessing) {
+        btn.classList.add("processing");
+        btn.dataset.originalText = btn.textContent;
+        btn.innerHTML = `<span class="spinner"></span> ${originalText || "Processing..."}`;
+      } else {
+        btn.classList.remove("processing");
+        btn.textContent = btn.dataset.originalText || "Action";
+      }
+    }
+    // ------------------
+
     function setStatus(label, info) {
       statusBadge.textContent = label;
       detail.textContent = info || "";
@@ -544,6 +580,11 @@
       document.querySelectorAll(".chunk-item").forEach(el => el.classList.remove("active"));
       currentChunkIndex = 0;
       totalChunks = 0;
+
+      setBtnProcessing(liveBtn, false);
+      setBtnProcessing(analyzeBtn, false);
+      setBtnProcessing(loadDocBtn, false);
+
       liveBtn.disabled = false;
       exportBtn.disabled = false;
       stopBtn.disabled = true;
@@ -609,6 +650,7 @@
       }
 
       setStatus("Analyzing", "Detecting emotions...");
+      setBtnProcessing(analyzeBtn, true, "Analyzing...");
 
       try {
         const response = await fetch("/api/analyze_text", {
@@ -649,7 +691,11 @@
         emotionPanel.style.display = "block";
         setStatus("Ready", `Analyzed: ${data.total_chunks} chunks`);
 
+        // Success
+        setBtnProcessing(analyzeBtn, false);
+
       } catch (err) {
+        setBtnProcessing(analyzeBtn, false);
         setStatus("Error", err.message || "Failed to analyze emotions");
       }
     }
@@ -674,6 +720,7 @@
 
       const file = docFileInput.files[0];
       setStatus("Parsing", "Reading document...");
+      setBtnProcessing(loadDocBtn, true, "Loading...");
 
       const formData = new FormData();
       formData.append("file", file);
@@ -698,6 +745,8 @@
         setStatus("Ready", `Document loaded: ${data.word_count} words`);
       } catch (err) {
         setStatus("Error", err.message || "Failed to load document");
+      } finally {
+        setBtnProcessing(loadDocBtn, false);
       }
     }
 
@@ -724,6 +773,7 @@
       exportBtn.disabled = true;
       stopBtn.disabled = false;
       setStatus("Connecting", "Starting live stream...");
+      setBtnProcessing(liveBtn, true, "Starting...");
 
       controller = new AbortController();
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -760,6 +810,12 @@
 
         setStatus("Streaming", "Waiting for first chunk...");
 
+        // Once we start streaming, we might want to change the button state to "Playing" or just keep it processing until logic dictates
+        // Actually, once playing starts, we can remove the spinner but keep it disabled, or keep spinner if we want to show "streaming"
+        // For now, let's keep it processing until audio starts playing or we decide. 
+        // Better yet: once first chunk arrives, we are "Live".
+
+
         while (true) {
           const { value, done } = await reader.read();
           if (done) break;
@@ -779,6 +835,9 @@
             }
             if (msg.type === "chunk") {
               chunksSeen += 1;
+              // Remove spinner once we start receiving audio
+              if (chunksSeen === 1) setBtnProcessing(liveBtn, false);
+
               setStatus("Playing", chunkCount ? `Chunk ${chunksSeen}/${chunkCount}` : `Chunk ${chunksSeen}`);
 
               const bytes = decodeBase64ToBytes(msg.audio_b64);
