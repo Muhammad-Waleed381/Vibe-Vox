@@ -328,6 +328,38 @@
       border-left: 4px solid var(--accent);
     }
 
+    /* Karaoke Overlay */
+    #karaoke_display {
+      margin-top: 12px;
+      margin-bottom: 12px;
+      padding: 12px;
+      background: rgba(180, 90, 43, 0.1);
+      border-left: 4px solid var(--accent);
+      border-radius: 6px;
+      font-style: italic;
+      min-height: 40px;
+      display: none;
+      transition: opacity 0.3s;
+    }
+
+    /* Recording Dot */
+    .rec-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      background: red;
+      border-radius: 50%;
+      margin-right: 4px;
+      animation: blink 1s infinite;
+    }
+
+    @keyframes blink {
+      50% {
+        opacity: 0;
+      }
+    }
+
+
     @keyframes slideIn {
       from {
         transform: translateX(100%);
@@ -370,7 +402,19 @@
       <div id="toast-container"></div>
 
       <h1>VibeVox MVP</h1>
+      <h1>VibeVox MVP</h1>
       <p>Live adaptive narration: text → emotion → style prompt → Qwen3-TTS, streamed as it’s generated.</p>
+
+      <!-- Presets -->
+      <div style="margin-bottom: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
+        <span style="font-size: 13px; font-weight: 600; color: var(--muted); align-self: center;">Presets:</span>
+        <button class="preset-btn" onclick="applyPreset('story')"
+          style="padding: 4px 10px; font-size: 12px; background: #e3d5c3; color: #5a4a3a;">📖 Storyteller</button>
+        <button class="preset-btn" onclick="applyPreset('news')"
+          style="padding: 4px 10px; font-size: 12px; background: #e3d5c3; color: #5a4a3a;">📰 News</button>
+        <button class="preset-btn" onclick="applyPreset('asmr')"
+          style="padding: 4px 10px; font-size: 12px; background: #e3d5c3; color: #5a4a3a;">🤫 ASMR</button>
+      </div>
 
       <div class="grid">
         <div>
@@ -401,7 +445,13 @@
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px;">
           <div>
             <label for="ref_audio" style="font-weight: normal; font-size: 13px;">Reference Audio (WAV/MP3)</label>
-            <input id="ref_audio" type="file" accept="audio/*" />
+            <div style="display: flex; gap: 8px;">
+              <input id="ref_audio" type="file" accept="audio/*" style="flex-grow: 1;" />
+              <button id="record_btn" style="background: var(--muted); width: 40px;"
+                title="Record Microphone">🎤</button>
+            </div>
+            <div id="record_status" style="font-size: 11px; color: var(--accent); margin-top: 4px; display: none;">
+              Recording...</div>
           </div>
           <div>
             <label for="ref_text" style="font-weight: normal; font-size: 13px;">Reference Transcript</label>
@@ -429,6 +479,9 @@
         <div style="display: flex; justify-content: space-between; align-items: baseline;">
           <label for="text">Text to Speak</label>
           <div style="font-size: 13px;">
+            <button id="dice_btn"
+              style="padding: 2px 8px; margin-right: 4px; background: var(--muted); font-size: 12px;"
+              title="Random Prompt">🎲</button>
             <button id="history_btn"
               style="padding: 2px 8px; margin-right: 8px; background: var(--muted); font-size: 12px;">🕒
               History</button>
@@ -458,670 +511,822 @@
 
       <!-- ... (Audio player and status divs remain same) ... -->
       <div style="margin-top: 12px;">
-        <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px;">
-          <audio id="player" controls style="flex-grow: 1;"></audio>
-          <div style="display: flex; align-items: center; gap: 4px;">
-            <span style="font-size: 14px;">🔊 Boost</span>
-            <input id="vol_boost" type="range" min="1" max="3" step="0.1" value="1" style="width: 80px;"
-              title="Volume Boost (100% - 300%)">
+        <!-- ... (Audio player and status divs remain same) ... -->
+        <div style="margin-top: 12px;">
+          <div id="karaoke_display"></div>
+          <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px;">
+            <audio id="player" controls style="flex-grow: 1;"></audio>
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <span style="font-size: 14px;">🔊 Boost</span>
+              <input id="vol_boost" type="range" min="1" max="3" step="0.1" value="1" style="width: 80px;"
+                title="Volume Boost (100% - 300%)">
+            </div>
           </div>
+          <canvas id="visualizer" width="800" height="60"></canvas>
         </div>
-        <canvas id="visualizer" width="800" height="60"></canvas>
-      </div>
-      <div class="progress-bar">
-        <div id="progress_fill" class="progress-fill" style="width: 0%;"></div>
-      </div>
+        <div class="progress-bar">
+          <div id="progress_fill" class="progress-fill" style="width: 0%;"></div>
+        </div>
 
-      <div class="status" style="margin-top: 10px;">
-        <a id="download" href="#" style="display: none;">Download export</a>
+        <div class="status" style="margin-top: 10px;">
+          <a id="download" href="#" style="display: none;">Download export</a>
+        </div>
+        <div class="status" id="detail"></div>
       </div>
-      <div class="status" id="detail"></div>
     </div>
-  </div>
 
-  <script>
-    // ... (Get Element IDs) ...
-    const liveBtn = document.getElementById("live");
-    const stopBtn = document.getElementById("stop");
-    const exportBtn = document.getElementById("export");
-    const statusBadge = document.getElementById("status");
-    const detail = document.getElementById("detail");
-    const downloadLink = document.getElementById("download");
-    const portInput = document.getElementById("port");
-    const speakerInput = document.getElementById("speaker");
-    const groqModelInput = document.getElementById("groq_model");
-    const crossfadeInput = document.getElementById("crossfade");
-    const textInput = document.getElementById("text");
-    const player = document.getElementById("player");
-    const refAudioInput = document.getElementById("ref_audio");
-    const refTextInput = document.getElementById("ref_text");
-    const docFileInput = document.getElementById("doc_file");
-    const loadDocBtn = document.getElementById("load_doc");
-    const docInfo = document.getElementById("doc_info");
-    const analyzeBtn = document.getElementById("analyze");
-    const emotionPanel = document.getElementById("emotion_panel");
-    const emotionSummary = document.getElementById("emotion_summary");
-    const chunkList = document.getElementById("chunk_list");
-    const rateInput = document.getElementById("rate");
-    const rateValue = document.getElementById("rate_value");
+    <script>
+      // ... (Get Element IDs) ...
+      const liveBtn = document.getElementById("live");
+      const stopBtn = document.getElementById("stop");
+      const exportBtn = document.getElementById("export");
+      const statusBadge = document.getElementById("status");
+      const detail = document.getElementById("detail");
+      const downloadLink = document.getElementById("download");
+      const portInput = document.getElementById("port");
+      const speakerInput = document.getElementById("speaker");
+      const groqModelInput = document.getElementById("groq_model");
+      const crossfadeInput = document.getElementById("crossfade");
+      const textInput = document.getElementById("text");
+      const player = document.getElementById("player");
+      const refAudioInput = document.getElementById("ref_audio");
+      const refTextInput = document.getElementById("ref_text");
+      const docFileInput = document.getElementById("doc_file");
+      const loadDocBtn = document.getElementById("load_doc");
+      const docInfo = document.getElementById("doc_info");
+      const analyzeBtn = document.getElementById("analyze");
+      const emotionPanel = document.getElementById("emotion_panel");
+      const emotionSummary = document.getElementById("emotion_summary");
+      const chunkList = document.getElementById("chunk_list");
+      const rateInput = document.getElementById("rate");
+      const rateValue = document.getElementById("rate_value");
 
-    const progressFill = document.getElementById("progress_fill");
-    const themeToggleBtn = document.getElementById("theme_toggle");
-    const charCountDisplay = document.getElementById("char_count");
+      const progressFill = document.getElementById("progress_fill");
+      const themeToggleBtn = document.getElementById("theme_toggle");
+      const charCountDisplay = document.getElementById("char_count");
 
-    // New Elements
-    const toastContainer = document.getElementById("toast-container");
-    const visualizer = document.getElementById("visualizer");
-    const durationEstDisplay = document.getElementById("duration_est");
-    const historyBtn = document.getElementById("history_btn");
-    const volBoostInput = document.getElementById("vol_boost");
+      // New Elements
+      const toastContainer = document.getElementById("toast-container");
+      const visualizer = document.getElementById("visualizer");
+      const durationEstDisplay = document.getElementById("duration_est");
+      const historyBtn = document.getElementById("history_btn");
+      const historyBtn = document.getElementById("history_btn");
+      const volBoostInput = document.getElementById("vol_boost");
 
-    // --- Persistent Settings & Theme ---
-    const STORAGE_KEY_PREFIX = "vibevox_";
-    const SETTINGS_INPUTS = ["port", "speaker", "groq_model", "crossfade", "rate", "text"];
+      // Round 2 Elements
+      const recordBtn = document.getElementById("record_btn");
+      const recordStatus = document.getElementById("record_status");
+      const diceBtn = document.getElementById("dice_btn");
+      const karaokeDisplay = document.getElementById("karaoke_display");
+      // exportBtn is already defined
 
-    function loadSettings() {
-      // Load Inputs
-      SETTINGS_INPUTS.forEach(id => {
-        const val = localStorage.getItem(STORAGE_KEY_PREFIX + id);
-        if (val) {
-          const el = document.getElementById(id);
-          if (el) {
-            el.value = val;
-            // Trigger events for sliders/etc if needed
-            if (id === 'rate') {
-              playbackRate = parseFloat(val);
-              if (rateValue) rateValue.textContent = playbackRate.toFixed(1) + "x";
+      // --- Persistent Settings & Theme ---
+      const STORAGE_KEY_PREFIX = "vibevox_";
+      const SETTINGS_INPUTS = ["port", "speaker", "groq_model", "crossfade", "rate", "text"];
+
+      function loadSettings() {
+        // Load Inputs
+        SETTINGS_INPUTS.forEach(id => {
+          const val = localStorage.getItem(STORAGE_KEY_PREFIX + id);
+          if (val) {
+            const el = document.getElementById(id);
+            if (el) {
+              el.value = val;
+              // Trigger events for sliders/etc if needed
+              if (id === 'rate') {
+                playbackRate = parseFloat(val);
+                if (rateValue) rateValue.textContent = playbackRate.toFixed(1) + "x";
+              }
             }
           }
-        }
-      });
-
-      // Load Theme
-      const storedTheme = localStorage.getItem(STORAGE_KEY_PREFIX + "theme");
-      if (storedTheme === "dark") {
-        document.documentElement.setAttribute("data-theme", "dark");
-      }
-
-      // Init Char Count
-      updateCharCount();
-    }
-
-    function saveSetting(id, value) {
-      localStorage.setItem(STORAGE_KEY_PREFIX + id, value);
-    }
-
-    function toggleTheme() {
-      const current = document.documentElement.getAttribute("data-theme");
-      const newTheme = current === "dark" ? "light" : "dark";
-
-      if (newTheme === "dark") {
-        document.documentElement.setAttribute("data-theme", "dark");
-      } else {
-        document.documentElement.removeAttribute("data-theme");
-      }
-      localStorage.setItem(STORAGE_KEY_PREFIX + "theme", newTheme);
-    }
-
-    function updateCharCount() {
-      const len = textInput.value.length;
-      charCountDisplay.textContent = `${len} chars`;
-
-      // Update duration est (Approx 150 wpm at 1.0x)
-      const words = textInput.value.trim().split(/\s+/).length;
-      const rate = parseFloat(rateInput.value) || 1.0;
-      const seconds = Math.ceil((words / 150) * 60 * (1 / rate));
-      durationEstDisplay.textContent = `~${seconds}s`;
-    }
-
-    // Initialize
-    loadSettings();
-
-    // Event Listeners for Persistence
-    SETTINGS_INPUTS.forEach(id => {
-      const el = document.getElementById(id);
-      if (el) {
-        el.addEventListener("input", (e) => {
-          saveSetting(id, e.target.value);
-          if (id === "text") updateCharCount();
-          if (id === "rate") updateCharCount();
         });
-        el.addEventListener("change", (e) => saveSetting(id, e.target.value));
-      }
-    });
 
-    themeToggleBtn.addEventListener("click", toggleTheme);
+        // Load Theme
+        const storedTheme = localStorage.getItem(STORAGE_KEY_PREFIX + "theme");
+        if (storedTheme === "dark") {
+          document.documentElement.setAttribute("data-theme", "dark");
+        }
 
-    // Shortcuts
-    document.addEventListener("keydown", (e) => {
-      // Ctrl+Enter -> Analyze
-      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-        if (!analyzeBtn.disabled) analyzeBtn.click();
-      }
-      // Shift+Enter -> Live Clone
-      if (e.shiftKey && e.key === "Enter") {
-        e.preventDefault(); // prevent new line
-        if (!liveBtn.disabled) liveBtn.click();
-      }
-      // Space -> Toggle Play (only if not focused on input)
-      if (e.code === "Space" && e.target.tagName !== "TEXTAREA" && e.target.tagName !== "INPUT") {
-        e.preventDefault();
-        if (player.paused) player.play(); else player.pause();
-      }
-    });
-
-    // History
-    historyBtn.addEventListener("click", () => {
-      const hist = JSON.parse(localStorage.getItem(STORAGE_KEY_PREFIX + "prompt_history") || "[]");
-      if (hist.length === 0) {
-        showToast("No history found", "info");
-        return;
-      }
-      // Simple prompt for MVP (could be modal)
-      const choice = prompt("Enter number to restore:\n" + hist.map((t, i) => `${i + 1}. ${t.substring(0, 40)}...`).join("\n"));
-      const idx = parseInt(choice) - 1;
-      if (hist[idx]) {
-        textInput.value = hist[idx];
+        // Init Char Count
         updateCharCount();
-        showToast("Restored from history", "success");
-      }
-    });
-
-    function saveToHistory(text) {
-      if (!text) return;
-      let hist = JSON.parse(localStorage.getItem(STORAGE_KEY_PREFIX + "prompt_history") || "[]");
-      // Remove duplicate if exists
-      hist = hist.filter(t => t !== text);
-      // Add to front
-      hist.unshift(text);
-      // Limit to 10
-      if (hist.length > 10) hist.pop();
-      localStorage.setItem(STORAGE_KEY_PREFIX + "prompt_history", JSON.stringify(hist));
-    }
-
-    // --- End Persistent Settings ---
-
-
-    // ... (Helper functions remain same) ...
-    let controller = null;
-    let audioCtx = null;
-    let masterGain = null; // Volume booster
-    let analyser = null; // Visualizer
-    let nextStartTime = 0;
-    let sources = [];
-    let exportPoll = null;
-    let exportJobId = null;
-    let playbackRate = 1.0;
-    let currentChunkIndex = 0;
-    let totalChunks = 0;
-    let visualizerFrame = null;
-
-    // --- UI Helpers ---
-    function showToast(message, type = "info") {
-      const toast = document.createElement("div");
-      toast.className = `toast ${type}`;
-
-      let icon = "ℹ️";
-      if (type === "error") icon = "❌";
-      if (type === "success") icon = "✅";
-
-      toast.innerHTML = `<span>${icon}</span> <span>${message}</span>`;
-      toastContainer.appendChild(toast);
-
-      // Auto remove
-      setTimeout(() => {
-        toast.style.animation = "fadeOut 0.3s ease forwards";
-        setTimeout(() => toast.remove(), 300);
-      }, 3000);
-    }
-
-    function setBtnProcessing(btn, isProcessing, originalText) {
-      if (isProcessing) {
-        btn.classList.add("processing");
-        btn.dataset.originalText = btn.textContent;
-        btn.innerHTML = `<span class="spinner"></span> ${originalText || "Processing..."}`;
-      } else {
-        btn.classList.remove("processing");
-        btn.textContent = btn.dataset.originalText || "Action";
-      }
-    }
-    // ------------------
-
-    function setStatus(label, info) {
-      statusBadge.textContent = label;
-      detail.textContent = info || "";
-      // Optional: Log important status changes to toast? 
-      // Keeping separate for now as status badge is persistent.
-    }
-
-    function clearDownload() {
-      if (!downloadLink) return;
-      downloadLink.style.display = "none";
-      downloadLink.href = "#";
-      downloadLink.removeAttribute("download");
-    }
-
-    function setDownload(url, filename) {
-      if (!downloadLink) return;
-      downloadLink.style.display = "inline-block";
-      downloadLink.href = url;
-      if (filename) downloadLink.setAttribute("download", filename);
-    }
-
-    function decodeBase64ToBytes(b64) {
-      const binary = atob(b64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) {
-        bytes[i] = binary.charCodeAt(i);
-      }
-      return bytes;
-    }
-
-    function stopAudio() {
-      for (const node of sources) {
-        try { node.stop(); } catch (_) { }
-      }
-      sources = [];
-      nextStartTime = 0;
-      if (audioCtx) {
-        try { audioCtx.close(); } catch (_) { }
-      }
-      if (visualizerFrame) cancelAnimationFrame(visualizerFrame);
-      audioCtx = null;
-      masterGain = null;
-      analyser = null;
-    }
-
-    // ... (stopExportPolling, stop, getCrossfadeSeconds, scheduleBuffer remain same) ...
-
-    function stopExportPolling() {
-      if (exportPoll) {
-        clearInterval(exportPoll);
-        exportPoll = null;
-      }
-      exportJobId = null;
-    }
-
-    function stop() {
-      if (controller) controller.abort();
-      controller = null;
-      stopExportPolling();
-      stopAudio();
-      clearDownload();
-      if (player) {
-        player.pause();
-        player.removeAttribute("src");
-        player.load();
-      }
-      progressFill.style.width = "0%";
-      document.querySelectorAll(".chunk-item").forEach(el => el.classList.remove("active"));
-      currentChunkIndex = 0;
-      totalChunks = 0;
-
-      setBtnProcessing(liveBtn, false);
-      setBtnProcessing(analyzeBtn, false);
-      setBtnProcessing(loadDocBtn, false);
-
-      liveBtn.disabled = false;
-      exportBtn.disabled = false;
-      stopBtn.disabled = true;
-      setStatus("Idle", "");
-    }
-
-    function getCrossfadeSeconds() {
-      const ms = Number(crossfadeInput.value || "50");
-      if (!Number.isFinite(ms)) return 0.05;
-      return Math.max(0, Math.min(ms, 500)) / 1000.0;
-    }
-
-    function scheduleBuffer(audioBuffer, crossfadeSec, chunkIdx) {
-      if (!audioCtx) return;
-      const now = audioCtx.currentTime;
-      const fade = Math.min(crossfadeSec, audioBuffer.duration / 2);
-      const startAt = Math.max(nextStartTime ? (nextStartTime - fade) : (now + 0.05), now + 0.02);
-      nextStartTime = startAt + audioBuffer.duration;
-
-      const source = audioCtx.createBufferSource();
-      source.buffer = audioBuffer;
-      source.playbackRate.value = playbackRate;
-
-      const gain = audioCtx.createGain();
-      gain.gain.setValueAtTime(0, startAt);
-      gain.gain.linearRampToValueAtTime(1, startAt + fade);
-      gain.gain.setValueAtTime(1, Math.max(startAt + fade, nextStartTime - fade));
-      gain.gain.linearRampToValueAtTime(0, nextStartTime);
-
-      // Connect to master gain instead of straight destination
-      if (masterGain) {
-        source.connect(gain).connect(masterGain);
-      } else {
-        source.connect(gain).connect(audioCtx.destination);
       }
 
-      source.start(startAt);
-      sources.push(source);
-
-      updateProgress(chunkIdx);
-    }
-
-    // --- Visualizer ---
-    function drawVisualizer() {
-      if (!analyser) return;
-      const canvas = visualizer;
-      const ctx = canvas.getContext("2d");
-      const width = canvas.width;
-      const height = canvas.height;
-      const bufferLength = analyser.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
-
-      analyser.getByteFrequencyData(dataArray);
-
-      ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--bg'); // clear with bg
-      ctx.clearRect(0, 0, width, height);
-
-      const barWidth = (width / bufferLength) * 2.5;
-      let barHeight;
-      let x = 0;
-
-      const accent = getComputedStyle(document.body).getPropertyValue('--accent');
-
-      for (let i = 0; i < bufferLength; i++) {
-        barHeight = dataArray[i] / 2;
-        ctx.fillStyle = accent;
-        ctx.fillRect(x, height - barHeight, barWidth, barHeight);
-        x += barWidth + 1;
+      function saveSetting(id, value) {
+        localStorage.setItem(STORAGE_KEY_PREFIX + id, value);
       }
 
-      visualizerFrame = requestAnimationFrame(drawVisualizer);
-    }
+      function toggleTheme() {
+        const current = document.documentElement.getAttribute("data-theme");
+        const newTheme = current === "dark" ? "light" : "dark";
 
-    function syncVolume() {
-      if (masterGain) {
-        masterGain.gain.value = parseFloat(volBoostInput.value);
+        if (newTheme === "dark") {
+          document.documentElement.setAttribute("data-theme", "dark");
+        } else {
+          document.documentElement.removeAttribute("data-theme");
+        }
+        localStorage.setItem(STORAGE_KEY_PREFIX + "theme", newTheme);
       }
-    }
 
-    volBoostInput.addEventListener("input", syncVolume);
-    // ------------------
+      function updateCharCount() {
+        const len = textInput.value.length;
+        charCountDisplay.textContent = `${len} chars`;
 
-    function fileToBase64(file) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => {
-          // Remove data:audio/xxx;base64, prefix
-          const base64 = reader.result.split(',')[1];
-          resolve(base64);
-        };
-        reader.onerror = error => reject(error);
+        // Update duration est (Approx 150 wpm at 1.0x)
+        const words = textInput.value.trim().split(/\s+/).length;
+        const rate = parseFloat(rateInput.value) || 1.0;
+        const seconds = Math.ceil((words / 150) * 60 * (1 / rate));
+        durationEstDisplay.textContent = `~${seconds}s`;
+      }
+
+      // Initialize
+      loadSettings();
+
+      // Event Listeners for Persistence
+      SETTINGS_INPUTS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.addEventListener("input", (e) => {
+            saveSetting(id, e.target.value);
+            if (id === "text") updateCharCount();
+            if (id === "rate") updateCharCount();
+          });
+          el.addEventListener("change", (e) => saveSetting(id, e.target.value));
+        }
       });
-    }
 
-    rateInput.addEventListener("input", () => {
-      playbackRate = parseFloat(rateInput.value);
-      rateValue.textContent = playbackRate.toFixed(1) + "x";
-      if (player) {
-        player.playbackRate = playbackRate;
-      }
-    });
+      themeToggleBtn.addEventListener("click", toggleTheme);
 
-    async function analyzeEmotions() {
-      const text = textInput.value.trim();
-      if (!text) {
-        showToast("Text is required", "error");
-        return;
-      }
-
-      setStatus("Analyzing", "Detecting emotions...");
-      setBtnProcessing(analyzeBtn, true, "Analyzing...");
-
-      try {
-        const response = await fetch("/api/analyze_text", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text,
-            groq_model: groqModelInput.value || "llama-3.1-8b-instant"
-          }),
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(errorText || "Failed to analyze text");
+      // Shortcuts
+      document.addEventListener("keydown", (e) => {
+        // Ctrl+Enter -> Analyze
+        if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+          if (!analyzeBtn.disabled) analyzeBtn.click();
         }
-
-        const data = await response.json();
-
-        emotionSummary.innerHTML = "";
-        for (const [emotion, count] of Object.entries(data.emotion_summary)) {
-          const chip = document.createElement("span");
-          chip.className = `emotion-chip ${emotion.toLowerCase()}`;
-          chip.textContent = `${emotion} (${count})`;
-          emotionSummary.appendChild(chip);
+        // Shift+Enter -> Live Clone
+        if (e.shiftKey && e.key === "Enter") {
+          e.preventDefault(); // prevent new line
+          if (!liveBtn.disabled) liveBtn.click();
         }
-
-        chunkList.innerHTML = "";
-        data.chunks.forEach((chunk, idx) => {
-          const item = document.createElement("div");
-          item.className = "chunk-item";
-          item.id = `chunk_${idx}`;
-          item.innerHTML = `<strong>${chunk.emotion}</strong> [${chunk.intensity}] - ${chunk.text}`;
-          chunkList.appendChild(item);
-        });
-
-        totalChunks = data.total_chunks;
-        currentChunkIndex = 0;
-        emotionPanel.style.display = "block";
-        setStatus("Ready", `Analyzed: ${data.total_chunks} chunks`);
-
-        // Success
-        setBtnProcessing(analyzeBtn, false);
-
-      } catch (err) {
-        setBtnProcessing(analyzeBtn, false);
-        setStatus("Error", "Analysis failed");
-        showToast(err.message || "Failed to analyze emotions", "error");
-      }
-    }
-
-    function updateProgress(chunkIdx) {
-      if (totalChunks > 0) {
-        const percent = ((chunkIdx + 1) / totalChunks) * 100;
-        progressFill.style.width = percent + "%";
-      }
-
-      document.querySelectorAll(".chunk-item").forEach((el, idx) => {
-        el.classList.toggle("active", idx === chunkIdx);
+        // Space -> Toggle Play (only if not focused on input)
+        if (e.code === "Space" && e.target.tagName !== "TEXTAREA" && e.target.tagName !== "INPUT") {
+          e.preventDefault();
+          if (player.paused) player.play(); else player.pause();
+        }
       });
-      currentChunkIndex = chunkIdx;
-    }
 
-    async function loadDocument() {
-      if (docFileInput.files.length === 0) {
-        showToast("Please select a document file", "error");
-        return;
-      }
-
-      const file = docFileInput.files[0];
-      setStatus("Parsing", "Reading document...");
-      setBtnProcessing(loadDocBtn, true, "Loading...");
-
-      const formData = new FormData();
-      formData.append("file", file);
-
-      try {
-        const response = await fetch("/api/parse_document", {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(errorText || "Failed to parse document");
-        }
-
-        const data = await response.json();
-        textInput.value = data.text;
-
-        docInfo.style.display = "block";
-        docInfo.textContent = `Loaded: ${data.filename} (${data.word_count} words)`;
-
-        setStatus("Ready", `Document loaded: ${data.word_count} words`);
-        showToast(`Loaded ${data.filename}`, "success");
-        updateCharCount(); // update stats
-      } catch (err) {
-        setStatus("Error", "Load failed");
-        showToast(err.message || "Failed to load document", "error");
-      } finally {
-        setBtnProcessing(loadDocBtn, false);
-      }
-    }
-
-    async function livePlay() {
-      stop();
-      const text = textInput.value.trim();
-      if (!text) {
-        showToast("Text is required", "error");
-        return;
-      }
-
-      saveToHistory(text); // Save to history
-
-      let refAudioB64 = null;
-      if (refAudioInput.files.length > 0) {
-        setStatus("Preparing", "Encoding reference audio...");
-        try {
-          refAudioB64 = await fileToBase64(refAudioInput.files[0]);
-        } catch (e) {
-          showToast("Failed to read audio file", "error");
+      // History
+      historyBtn.addEventListener("click", () => {
+        const hist = JSON.parse(localStorage.getItem(STORAGE_KEY_PREFIX + "prompt_history") || "[]");
+        if (hist.length === 0) {
+          showToast("No history found", "info");
           return;
         }
+        // Simple prompt for MVP (could be modal)
+        const choice = prompt("Enter number to restore:\n" + hist.map((t, i) => `${i + 1}. ${t.substring(0, 40)}...`).join("\n"));
+        const idx = parseInt(choice) - 1;
+        if (hist[idx]) {
+          textInput.value = hist[idx];
+          updateCharCount();
+          showToast("Restored from history", "success");
+        }
+      });
+
+      function saveToHistory(text) {
+        if (!text) return;
+        let hist = JSON.parse(localStorage.getItem(STORAGE_KEY_PREFIX + "prompt_history") || "[]");
+        // Remove duplicate if exists
+        hist = hist.filter(t => t !== text);
+        // Add to front
+        hist.unshift(text);
+        // Limit to 10
+        if (hist.length > 10) hist.pop();
+        localStorage.setItem(STORAGE_KEY_PREFIX + "prompt_history", JSON.stringify(hist));
+        localStorage.setItem(STORAGE_KEY_PREFIX + "prompt_history", JSON.stringify(hist));
       }
 
-      liveBtn.disabled = true;
-      exportBtn.disabled = true;
-      stopBtn.disabled = false;
-      setStatus("Connecting", "Starting live stream...");
-      setBtnProcessing(liveBtn, true, "Starting...");
+      // --- Round 2 Logic ---
 
-      controller = new AbortController();
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-      // Setup Master Gain & Visualizer
-      masterGain = audioCtx.createGain();
-      masterGain.gain.value = parseFloat(volBoostInput.value);
-      masterGain.connect(audioCtx.destination);
-
-      analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 256;
-      masterGain.connect(analyser); // Visualize output
-      drawVisualizer(); // Start loop
-
-      await audioCtx.resume();
-
-      const payload = {
-        text,
-        tts_port: Number(portInput.value || "5000"),
-        speaker: speakerInput.value || "Male_Narrator",
-        groq_model: groqModelInput.value || "llama-3.1-8b-instant",
-        reference_audio: refAudioB64,
-        reference_text: refTextInput.value.trim() || null,
+      // Presets
+      window.applyPreset = function (type) {
+        if (type === 'story') {
+          rateInput.value = 0.9;
+          crossfadeInput.value = 100;
+        } else if (type === 'news') {
+          rateInput.value = 1.1;
+          crossfadeInput.value = 20;
+        } else if (type === 'asmr') {
+          rateInput.value = 0.7;
+          crossfadeInput.value = 200;
+        }
+        // Trigger save
+        rateInput.dispatchEvent(new Event('input'));
+        crossfadeInput.dispatchEvent(new Event('input'));
+        showToast(`Applied ${type} preset`, 'success');
       };
 
-      try {
-        const response = await fetch(`/api/speak_stream`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-          signal: controller.signal,
-        });
-        // ... (Rest of streaming logic remains same) ...
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(errorText || "Failed to stream audio");
-        }
+      // Random Prompts
+      const RANDOM_PROMPTS = [
+        "The ancient door creaked open, revealing a room filled with swirling dust and golden light.",
+        "I can't believe you did that! After everything we've been through?",
+        "Breaking news: Scientists have discovered a new planet capable of sustaining life.",
+        "He whispered into the microphone, his voice trembling with anticipation.",
+        "The quick brown fox jumps over the lazy dog, but the dog didn't seem to mind."
+      ];
+      diceBtn.addEventListener('click', () => {
+        const item = RANDOM_PROMPTS[Math.floor(Math.random() * RANDOM_PROMPTS.length)];
+        textInput.value = item;
+        updateCharCount();
+      });
 
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        let chunkCount = null;
-        let chunksSeen = 0;
-        const crossfadeSec = getCrossfadeSeconds();
+      // Recording
+      let mediaRecorder = null;
+      let recordedChunks = [];
+      let recordedAudioBlob = null;
+      let isRecording = false;
 
-        setStatus("Streaming", "Waiting for first chunk...");
+      recordBtn.addEventListener('click', async () => {
+        if (isRecording) {
+          // Stop
+          mediaRecorder.stop();
+          isRecording = false;
+          recordBtn.textContent = "🎤";
+          recordBtn.style.background = "var(--muted)";
+          recordStatus.style.display = "none";
+        } else {
+          // Start
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            recordedChunks = [];
 
-        // Once we start streaming, we might want to change the button state to "Playing" or just keep it processing until logic dictates
-        // Actually, once playing starts, we can remove the spinner but keep it disabled, or keep spinner if we want to show "streaming"
-        // For now, let's keep it processing until audio starts playing or we decide. 
-        // Better yet: once first chunk arrives, we are "Live".
+            mediaRecorder.ondataavailable = e => {
+              if (e.data.size > 0) recordedChunks.push(e.data);
+            };
 
+            mediaRecorder.onstop = () => {
+              recordedAudioBlob = new Blob(recordedChunks, { type: 'audio/webm' });
+              showToast("Recording saved for cloning!", "success");
+              // Visual feedback that we have loopback audio
+              refAudioInput.value = ""; // Clear file input
+            };
 
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          while (true) {
-            const nl = buffer.indexOf("\n");
-            if (nl === -1) break;
-            const line = buffer.slice(0, nl).trim();
-            buffer = buffer.slice(nl + 1);
-            if (!line) continue;
-
-            const msg = JSON.parse(line);
-            if (msg.type === "meta") {
-              chunkCount = msg.chunk_count;
-              setStatus("Streaming", `Preparing ${chunkCount} chunks...`);
-              continue;
-            }
-            if (msg.type === "chunk") {
-              chunksSeen += 1;
-              // Remove spinner once we start receiving audio
-              if (chunksSeen === 1) setBtnProcessing(liveBtn, false);
-
-              setStatus("Playing", chunkCount ? `Chunk ${chunksSeen}/${chunkCount}` : `Chunk ${chunksSeen}`);
-
-              const bytes = decodeBase64ToBytes(msg.audio_b64);
-              const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-              const audioBuffer = await audioCtx.decodeAudioData(ab);
-              scheduleBuffer(audioBuffer, crossfadeSec, chunksSeen - 1);
-              continue;
-            }
-            if (msg.type === "done") {
-              setStatus("Playing", "Stream complete (finishing playback)");
-              liveBtn.disabled = false;
-              exportBtn.disabled = false;
-              if (sources.length) {
-                const last = sources[sources.length - 1];
-                last.onended = () => stop();
-              } else {
-                stop();
-              }
-              return;
-            }
-            if (msg.type === "error") {
-              throw new Error(msg.error || "Stream error");
-            }
+            mediaRecorder.start();
+            isRecording = true;
+            recordBtn.innerHTML = "<span class='rec-dot'></span>";
+            recordBtn.style.background = "#333";
+            recordStatus.style.display = "block";
+          } catch (err) {
+            showToast("Microphone access denied", "error");
           }
         }
-      } catch (err) {
-        stop();
-        setStatus("Error", err.message || "Streaming failed");
-        showToast(err.message || "Streaming failed", "error");
+      });
+
+      // --- End Persistent Settings ---
+
+
+      // ... (Helper functions remain same) ...
+      let controller = null;
+      let audioCtx = null;
+      let masterGain = null; // Volume booster
+      let analyser = null; // Visualizer
+      let nextStartTime = 0;
+      let sources = [];
+      let exportPoll = null;
+      let exportJobId = null;
+      let playbackRate = 1.0;
+      let currentChunkIndex = 0;
+      let totalChunks = 0;
+      let playbackRate = 1.0;
+      let currentChunkIndex = 0;
+      let totalChunks = 0;
+      let visualizerFrame = null;
+
+      // Client-Side Export
+      let destStream = null;
+      let outputRecorder = null;
+      let outputChunks = [];
+
+      // --- UI Helpers ---
+      function showToast(message, type = "info") {
+        const toast = document.createElement("div");
+        toast.className = `toast ${type}`;
+
+        let icon = "ℹ️";
+        if (type === "error") icon = "❌";
+        if (type === "success") icon = "✅";
+
+        toast.innerHTML = `<span>${icon}</span> <span>${message}</span>`;
+        toastContainer.appendChild(toast);
+
+        // Auto remove
+        setTimeout(() => {
+          toast.style.animation = "fadeOut 0.3s ease forwards";
+          setTimeout(() => toast.remove(), 300);
+        }, 3000);
       }
-    }
 
-    async function exportAudiobook() {
-      // ... (Export needs similar update, but for brevity we focus on live play first as requested) ...
-      stop();
-      setStatus("Error", "Export not yet updated for cloning. Use Live Play.");
-    }
+      function setBtnProcessing(btn, isProcessing, originalText) {
+        if (isProcessing) {
+          btn.classList.add("processing");
+          btn.dataset.originalText = btn.textContent;
+          btn.innerHTML = `<span class="spinner"></span> ${originalText || "Processing..."}`;
+        } else {
+          btn.classList.remove("processing");
+          btn.textContent = btn.dataset.originalText || "Action";
+        }
+      }
+      // ------------------
 
-    liveBtn.addEventListener("click", livePlay);
-    stopBtn.addEventListener("click", stop);
-    exportBtn.addEventListener("click", exportAudiobook);
-    loadDocBtn.addEventListener("click", loadDocument);
-    analyzeBtn.addEventListener("click", analyzeEmotions);
-  </script>
+      function setStatus(label, info) {
+        statusBadge.textContent = label;
+        detail.textContent = info || "";
+        // Optional: Log important status changes to toast? 
+        // Keeping separate for now as status badge is persistent.
+      }
+
+      function clearDownload() {
+        if (!downloadLink) return;
+        downloadLink.style.display = "none";
+        downloadLink.href = "#";
+        downloadLink.removeAttribute("download");
+      }
+
+      function setDownload(url, filename) {
+        if (!downloadLink) return;
+        downloadLink.style.display = "inline-block";
+        downloadLink.href = url;
+        if (filename) downloadLink.setAttribute("download", filename);
+      }
+
+      function decodeBase64ToBytes(b64) {
+        const binary = atob(b64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes;
+      }
+
+      function stopAudio() {
+        for (const node of sources) {
+          try { node.stop(); } catch (_) { }
+        }
+        sources = [];
+        nextStartTime = 0;
+        if (audioCtx) {
+          try { audioCtx.close(); } catch (_) { }
+        }
+        if (visualizerFrame) cancelAnimationFrame(visualizerFrame);
+        audioCtx = null;
+        masterGain = null;
+        analyser = null;
+        destStream = null;
+        outputRecorder = null;
+
+        karaokeDisplay.style.display = 'none';
+      }
+
+      // ... (stopExportPolling, stop, getCrossfadeSeconds, scheduleBuffer remain same) ...
+
+      function stopExportPolling() {
+        if (exportPoll) {
+          clearInterval(exportPoll);
+          exportPoll = null;
+        }
+        exportJobId = null;
+      }
+
+      function stop() {
+        if (controller) controller.abort();
+        controller = null;
+        stopExportPolling();
+        stopAudio();
+        clearDownload();
+        if (player) {
+          player.pause();
+          player.removeAttribute("src");
+          player.load();
+        }
+        progressFill.style.width = "0%";
+        document.querySelectorAll(".chunk-item").forEach(el => el.classList.remove("active"));
+        currentChunkIndex = 0;
+        totalChunks = 0;
+
+        setBtnProcessing(liveBtn, false);
+        setBtnProcessing(analyzeBtn, false);
+        setBtnProcessing(loadDocBtn, false);
+
+        // Save Export if exists
+        if (outputChunks.length > 0) {
+          const blob = new Blob(outputChunks, { type: 'audio/wav' });
+          const url = URL.createObjectURL(blob);
+          setDownload(url, `vibevox_export_${Date.now()}.wav`);
+          showToast("Export ready for download", "success");
+        }
+
+        liveBtn.disabled = false;
+        exportBtn.disabled = false;
+        stopBtn.disabled = true;
+        setStatus("Idle", "");
+      }
+
+      function getCrossfadeSeconds() {
+        const ms = Number(crossfadeInput.value || "50");
+        if (!Number.isFinite(ms)) return 0.05;
+        return Math.max(0, Math.min(ms, 500)) / 1000.0;
+      }
+
+      function scheduleBuffer(audioBuffer, crossfadeSec, chunkIdx) {
+        if (!audioCtx) return;
+        const now = audioCtx.currentTime;
+        const fade = Math.min(crossfadeSec, audioBuffer.duration / 2);
+        const startAt = Math.max(nextStartTime ? (nextStartTime - fade) : (now + 0.05), now + 0.02);
+        nextStartTime = startAt + audioBuffer.duration;
+
+        const source = audioCtx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.playbackRate.value = playbackRate;
+
+        const gain = audioCtx.createGain();
+        gain.gain.setValueAtTime(0, startAt);
+        gain.gain.linearRampToValueAtTime(1, startAt + fade);
+        gain.gain.setValueAtTime(1, Math.max(startAt + fade, nextStartTime - fade));
+        gain.gain.linearRampToValueAtTime(0, nextStartTime);
+
+        // Connect to master gain instead of straight destination
+        if (masterGain) {
+          source.connect(gain).connect(masterGain);
+        } else {
+          source.connect(gain).connect(audioCtx.destination);
+        }
+
+        source.start(startAt);
+        sources.push(source);
+
+        updateProgress(chunkIdx);
+      }
+
+      // --- Visualizer ---
+      function drawVisualizer() {
+        if (!analyser) return;
+        const canvas = visualizer;
+        const ctx = canvas.getContext("2d");
+        const width = canvas.width;
+        const height = canvas.height;
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+
+        analyser.getByteFrequencyData(dataArray);
+
+        ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--bg'); // clear with bg
+        ctx.clearRect(0, 0, width, height);
+
+        const barWidth = (width / bufferLength) * 2.5;
+        let barHeight;
+        let x = 0;
+
+        const accent = getComputedStyle(document.body).getPropertyValue('--accent');
+
+        for (let i = 0; i < bufferLength; i++) {
+          barHeight = dataArray[i] / 2;
+          ctx.fillStyle = accent;
+          ctx.fillRect(x, height - barHeight, barWidth, barHeight);
+          x += barWidth + 1;
+        }
+
+        visualizerFrame = requestAnimationFrame(drawVisualizer);
+      }
+
+      function syncVolume() {
+        if (masterGain) {
+          masterGain.gain.value = parseFloat(volBoostInput.value);
+        }
+      }
+
+      volBoostInput.addEventListener("input", syncVolume);
+      // ------------------
+
+      function fileToBase64(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(file);
+          reader.onload = () => {
+            // Remove data:audio/xxx;base64, prefix
+            const base64 = reader.result.split(',')[1];
+            resolve(base64);
+          };
+          reader.onerror = error => reject(error);
+        });
+      }
+
+      rateInput.addEventListener("input", () => {
+        playbackRate = parseFloat(rateInput.value);
+        rateValue.textContent = playbackRate.toFixed(1) + "x";
+        if (player) {
+          player.playbackRate = playbackRate;
+        }
+      });
+
+      async function analyzeEmotions() {
+        const text = textInput.value.trim();
+        if (!text) {
+          showToast("Text is required", "error");
+          return;
+        }
+
+        setStatus("Analyzing", "Detecting emotions...");
+        setBtnProcessing(analyzeBtn, true, "Analyzing...");
+
+        try {
+          const response = await fetch("/api/analyze_text", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text,
+              groq_model: groqModelInput.value || "llama-3.1-8b-instant"
+            }),
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText || "Failed to analyze text");
+          }
+
+          const data = await response.json();
+
+          emotionSummary.innerHTML = "";
+          for (const [emotion, count] of Object.entries(data.emotion_summary)) {
+            const chip = document.createElement("span");
+            chip.className = `emotion-chip ${emotion.toLowerCase()}`;
+            chip.textContent = `${emotion} (${count})`;
+            emotionSummary.appendChild(chip);
+          }
+
+          chunkList.innerHTML = "";
+          data.chunks.forEach((chunk, idx) => {
+            const item = document.createElement("div");
+            item.className = "chunk-item";
+            item.id = `chunk_${idx}`;
+            item.innerHTML = `<strong>${chunk.emotion}</strong> [${chunk.intensity}] - ${chunk.text}`;
+            chunkList.appendChild(item);
+          });
+
+          totalChunks = data.total_chunks;
+          currentChunkIndex = 0;
+          emotionPanel.style.display = "block";
+          setStatus("Ready", `Analyzed: ${data.total_chunks} chunks`);
+
+          // Success
+          setBtnProcessing(analyzeBtn, false);
+
+        } catch (err) {
+          setBtnProcessing(analyzeBtn, false);
+          setStatus("Error", "Analysis failed");
+          showToast(err.message || "Failed to analyze emotions", "error");
+        }
+      }
+
+      function updateProgress(chunkIdx) {
+        if (totalChunks > 0) {
+          const percent = ((chunkIdx + 1) / totalChunks) * 100;
+          progressFill.style.width = percent + "%";
+        }
+
+        document.querySelectorAll(".chunk-item").forEach((el, idx) => {
+          el.classList.toggle("active", idx === chunkIdx);
+        });
+        currentChunkIndex = chunkIdx;
+      }
+
+      async function loadDocument() {
+        if (docFileInput.files.length === 0) {
+          showToast("Please select a document file", "error");
+          return;
+        }
+
+        const file = docFileInput.files[0];
+        setStatus("Parsing", "Reading document...");
+        setBtnProcessing(loadDocBtn, true, "Loading...");
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        try {
+          const response = await fetch("/api/parse_document", {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText || "Failed to parse document");
+          }
+
+          const data = await response.json();
+          textInput.value = data.text;
+
+          docInfo.style.display = "block";
+          docInfo.textContent = `Loaded: ${data.filename} (${data.word_count} words)`;
+
+          setStatus("Ready", `Document loaded: ${data.word_count} words`);
+          showToast(`Loaded ${data.filename}`, "success");
+          updateCharCount(); // update stats
+        } catch (err) {
+          setStatus("Error", "Load failed");
+          showToast(err.message || "Failed to load document", "error");
+        } finally {
+          setBtnProcessing(loadDocBtn, false);
+        }
+      }
+
+      async function livePlay() {
+        stop();
+        const text = textInput.value.trim();
+        if (!text) {
+          showToast("Text is required", "error");
+          return;
+        }
+
+        saveToHistory(text); // Save to history
+
+        // Recording Override
+        let refAudioB64 = null;
+        if (recordedAudioBlob) {
+          // Use recorded blob
+          setStatus("Preparing", "Encoding recorded audio...");
+          try {
+            refAudioB64 = await fileToBase64(recordedAudioBlob);
+          } catch (e) {
+            showToast("Failed to encode recording", "error");
+            return;
+          }
+        } else if (refAudioInput.files.length > 0) {
+          setStatus("Preparing", "Encoding reference audio...");
+          try {
+            refAudioB64 = await fileToBase64(refAudioInput.files[0]);
+          } catch (e) {
+            showToast("Failed to read audio file", "error");
+            return;
+          }
+        }
+
+        liveBtn.disabled = true;
+        exportBtn.disabled = true;
+        stopBtn.disabled = false;
+        setStatus("Connecting", "Starting live stream...");
+        setBtnProcessing(liveBtn, true, "Starting...");
+
+        controller = new AbortController();
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        // Setup Master Gain & Visualizer
+        masterGain = audioCtx.createGain();
+        masterGain.gain.value = parseFloat(volBoostInput.value);
+        masterGain.connect(audioCtx.destination);
+
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+        masterGain.connect(analyser); // Visualize output
+        drawVisualizer(); // Start loop
+
+        // Setup Export Recording
+        destStream = audioCtx.createMediaStreamDestination();
+        masterGain.connect(destStream);
+        outputRecorder = new MediaRecorder(destStream.stream);
+        outputChunks = [];
+        outputRecorder.ondataavailable = e => outputChunks.push(e.data);
+        outputRecorder.start();
+
+        await audioCtx.resume();
+
+        const payload = {
+          text,
+          tts_port: Number(portInput.value || "5000"),
+          speaker: speakerInput.value || "Male_Narrator",
+          groq_model: groqModelInput.value || "llama-3.1-8b-instant",
+          reference_audio: refAudioB64,
+          reference_text: refTextInput.value.trim() || null,
+        };
+
+        try {
+          const response = await fetch(`/api/speak_stream`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+            signal: controller.signal,
+          });
+          // ... (Rest of streaming logic remains same) ...
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText || "Failed to stream audio");
+          }
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          let chunkCount = null;
+          let chunksSeen = 0;
+          const crossfadeSec = getCrossfadeSeconds();
+
+          setStatus("Streaming", "Waiting for first chunk...");
+
+          // Once we start streaming, we might want to change the button state to "Playing" or just keep it processing until logic dictates
+          // Actually, once playing starts, we can remove the spinner but keep it disabled, or keep spinner if we want to show "streaming"
+          // For now, let's keep it processing until audio starts playing or we decide. 
+          // Better yet: once first chunk arrives, we are "Live".
+
+
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            while (true) {
+              const nl = buffer.indexOf("\n");
+              if (nl === -1) break;
+              const line = buffer.slice(0, nl).trim();
+              buffer = buffer.slice(nl + 1);
+              if (!line) continue;
+
+              const msg = JSON.parse(line);
+              if (msg.type === "meta") {
+                chunkCount = msg.chunk_count;
+                setStatus("Streaming", `Preparing ${chunkCount} chunks...`);
+                continue;
+              }
+              if (msg.type === "chunk") {
+                chunksSeen += 1;
+                // Remove spinner once we start receiving audio
+                if (chunksSeen === 1) setBtnProcessing(liveBtn, false);
+
+                setStatus("Playing", chunkCount ? `Chunk ${chunksSeen}/${chunkCount}` : `Chunk ${chunksSeen}`);
+
+                // Karaoke Update
+                if (chunksSeen <= chunkList.children.length) {
+                  const activeItem = chunkList.children[chunksSeen - 1];
+                  // activeItem.scrollIntoView({ behavior: 'smooth', block: 'center' }); // Cloning keeps generated chunks synced?
+                  // Actually the chunks might not match 1:1 if we don't have analysis first.
+                  // But if we did analysis, we can try to map.
+                  // For now, let's just show the text if available in the chunk msg
+                }
+                // The backend chunk msg doesn't strictly have text relative to analysis unless we map it.
+                // However, we can use the "sentences" from analysis if they exist.
+                // Easier implementation: The chunk message SHOULD contain the text segment if the backend sends it. 
+                // Checking backend... backend sends 'audio_b64'. It might not send text.
+                // If we assume 1:1 mapping with analysis:
+                if (chunkList.children.length > 0 && (chunksSeen - 1) < chunkList.children.length) {
+                  const item = chunkList.children[chunksSeen - 1];
+                  item.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  karaokeDisplay.textContent = item.innerText;
+                  karaokeDisplay.style.display = 'block';
+                }
+
+                const bytes = decodeBase64ToBytes(msg.audio_b64);
+                const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+                const audioBuffer = await audioCtx.decodeAudioData(ab);
+                scheduleBuffer(audioBuffer, crossfadeSec, chunksSeen - 1);
+                continue;
+              }
+              if (msg.type === "done") {
+                setStatus("Playing", "Stream complete (finishing playback)");
+
+                if (outputRecorder && outputRecorder.state === 'recording') {
+                  outputRecorder.stop();
+                }
+
+                liveBtn.disabled = false;
+                exportBtn.disabled = false;
+                if (sources.length) {
+                  const last = sources[sources.length - 1];
+                  last.onended = () => stop();
+                } else {
+                  stop();
+                }
+                return;
+              }
+              if (msg.type === "error") {
+                throw new Error(msg.error || "Stream error");
+              }
+            }
+          }
+        } catch (err) {
+          stop();
+          setStatus("Error", err.message || "Streaming failed");
+          showToast(err.message || "Streaming failed", "error");
+        }
+      }
+
+      async function exportAudiobook() {
+        // ... (Export needs similar update, but for brevity we focus on live play first as requested) ...
+        stop();
+        setStatus("Error", "Export not yet updated for cloning. Use Live Play.");
+      }
+
+      liveBtn.addEventListener("click", livePlay);
+      stopBtn.addEventListener("click", stop);
+      exportBtn.addEventListener("click", exportAudiobook);
+      loadDocBtn.addEventListener("click", loadDocument);
+      analyzeBtn.addEventListener("click", analyzeEmotions);
+    </script>
 </body>
 
 </html>
