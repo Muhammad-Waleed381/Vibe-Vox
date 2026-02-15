@@ -288,6 +288,78 @@
       cursor: wait;
       pointer-events: none;
     }
+
+    /* Toasts */
+    #toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: none;
+    }
+
+    .toast {
+      background: var(--panel);
+      border: 1px solid #e3d5c3;
+      padding: 12px 16px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 280px;
+      max-width: 400px;
+      animation: slideIn 0.3s ease forwards;
+      pointer-events: auto;
+    }
+
+    .toast.error {
+      border-left: 44px solid #dc3545;
+    }
+
+    .toast.success {
+      border-left: 4px solid #28a745;
+    }
+
+    .toast.info {
+      border-left: 4px solid var(--accent);
+    }
+
+    @keyframes slideIn {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+
+    @keyframes fadeOut {
+      from {
+        opacity: 1;
+      }
+
+      to {
+        opacity: 0;
+      }
+    }
+
+    /* Visualizer */
+    #visualizer {
+      width: 100%;
+      height: 60px;
+      background: rgba(0, 0, 0, 0.03);
+      /* Subtle bg */
+      border-radius: 8px;
+      margin-top: 12px;
+      display: block;
+    }
   </style>
 </head>
 
@@ -295,6 +367,8 @@
   <div class="wrap">
     <div class="panel">
       <button id="theme_toggle" class="theme-toggle" title="Toggle Theme">🌗</button>
+      <div id="toast-container"></div>
+
       <h1>VibeVox MVP</h1>
       <p>Live adaptive narration: text → emotion → style prompt → Qwen3-TTS, streamed as it’s generated.</p>
 
@@ -352,7 +426,15 @@
       </div>
 
       <div>
-        <label for="text">Text to Speak</label>
+        <div style="display: flex; justify-content: space-between; align-items: baseline;">
+          <label for="text">Text to Speak</label>
+          <div style="font-size: 13px;">
+            <button id="history_btn"
+              style="padding: 2px 8px; margin-right: 8px; background: var(--muted); font-size: 12px;">🕒
+              History</button>
+            <span id="duration_est" style="color: var(--accent);">~0s</span>
+          </div>
+        </div>
         <textarea id="text">The hallway was quiet. He paused, listening for any sound.</textarea>
         <div id="char_count" class="char-count">0 chars</div>
       </div>
@@ -376,7 +458,15 @@
 
       <!-- ... (Audio player and status divs remain same) ... -->
       <div style="margin-top: 12px;">
-        <audio id="player" controls style="width: 100%;"></audio>
+        <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px;">
+          <audio id="player" controls style="flex-grow: 1;"></audio>
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <span style="font-size: 14px;">🔊 Boost</span>
+            <input id="vol_boost" type="range" min="1" max="3" step="0.1" value="1" style="width: 80px;"
+              title="Volume Boost (100% - 300%)">
+          </div>
+        </div>
+        <canvas id="visualizer" width="800" height="60"></canvas>
       </div>
       <div class="progress-bar">
         <div id="progress_fill" class="progress-fill" style="width: 0%;"></div>
@@ -418,6 +508,13 @@
     const progressFill = document.getElementById("progress_fill");
     const themeToggleBtn = document.getElementById("theme_toggle");
     const charCountDisplay = document.getElementById("char_count");
+
+    // New Elements
+    const toastContainer = document.getElementById("toast-container");
+    const visualizer = document.getElementById("visualizer");
+    const durationEstDisplay = document.getElementById("duration_est");
+    const historyBtn = document.getElementById("history_btn");
+    const volBoostInput = document.getElementById("vol_boost");
 
     // --- Persistent Settings & Theme ---
     const STORAGE_KEY_PREFIX = "vibevox_";
@@ -469,6 +566,12 @@
     function updateCharCount() {
       const len = textInput.value.length;
       charCountDisplay.textContent = `${len} chars`;
+
+      // Update duration est (Approx 150 wpm at 1.0x)
+      const words = textInput.value.trim().split(/\s+/).length;
+      const rate = parseFloat(rateInput.value) || 1.0;
+      const seconds = Math.ceil((words / 150) * 60 * (1 / rate));
+      durationEstDisplay.textContent = `~${seconds}s`;
     }
 
     // Initialize
@@ -481,6 +584,7 @@
         el.addEventListener("input", (e) => {
           saveSetting(id, e.target.value);
           if (id === "text") updateCharCount();
+          if (id === "rate") updateCharCount();
         });
         el.addEventListener("change", (e) => saveSetting(id, e.target.value));
       }
@@ -488,12 +592,61 @@
 
     themeToggleBtn.addEventListener("click", toggleTheme);
 
+    // Shortcuts
+    document.addEventListener("keydown", (e) => {
+      // Ctrl+Enter -> Analyze
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        if (!analyzeBtn.disabled) analyzeBtn.click();
+      }
+      // Shift+Enter -> Live Clone
+      if (e.shiftKey && e.key === "Enter") {
+        e.preventDefault(); // prevent new line
+        if (!liveBtn.disabled) liveBtn.click();
+      }
+      // Space -> Toggle Play (only if not focused on input)
+      if (e.code === "Space" && e.target.tagName !== "TEXTAREA" && e.target.tagName !== "INPUT") {
+        e.preventDefault();
+        if (player.paused) player.play(); else player.pause();
+      }
+    });
+
+    // History
+    historyBtn.addEventListener("click", () => {
+      const hist = JSON.parse(localStorage.getItem(STORAGE_KEY_PREFIX + "prompt_history") || "[]");
+      if (hist.length === 0) {
+        showToast("No history found", "info");
+        return;
+      }
+      // Simple prompt for MVP (could be modal)
+      const choice = prompt("Enter number to restore:\n" + hist.map((t, i) => `${i + 1}. ${t.substring(0, 40)}...`).join("\n"));
+      const idx = parseInt(choice) - 1;
+      if (hist[idx]) {
+        textInput.value = hist[idx];
+        updateCharCount();
+        showToast("Restored from history", "success");
+      }
+    });
+
+    function saveToHistory(text) {
+      if (!text) return;
+      let hist = JSON.parse(localStorage.getItem(STORAGE_KEY_PREFIX + "prompt_history") || "[]");
+      // Remove duplicate if exists
+      hist = hist.filter(t => t !== text);
+      // Add to front
+      hist.unshift(text);
+      // Limit to 10
+      if (hist.length > 10) hist.pop();
+      localStorage.setItem(STORAGE_KEY_PREFIX + "prompt_history", JSON.stringify(hist));
+    }
+
     // --- End Persistent Settings ---
 
 
     // ... (Helper functions remain same) ...
     let controller = null;
     let audioCtx = null;
+    let masterGain = null; // Volume booster
+    let analyser = null; // Visualizer
     let nextStartTime = 0;
     let sources = [];
     let exportPoll = null;
@@ -501,8 +654,27 @@
     let playbackRate = 1.0;
     let currentChunkIndex = 0;
     let totalChunks = 0;
+    let visualizerFrame = null;
 
     // --- UI Helpers ---
+    function showToast(message, type = "info") {
+      const toast = document.createElement("div");
+      toast.className = `toast ${type}`;
+
+      let icon = "ℹ️";
+      if (type === "error") icon = "❌";
+      if (type === "success") icon = "✅";
+
+      toast.innerHTML = `<span>${icon}</span> <span>${message}</span>`;
+      toastContainer.appendChild(toast);
+
+      // Auto remove
+      setTimeout(() => {
+        toast.style.animation = "fadeOut 0.3s ease forwards";
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
     function setBtnProcessing(btn, isProcessing, originalText) {
       if (isProcessing) {
         btn.classList.add("processing");
@@ -518,6 +690,8 @@
     function setStatus(label, info) {
       statusBadge.textContent = label;
       detail.textContent = info || "";
+      // Optional: Log important status changes to toast? 
+      // Keeping separate for now as status badge is persistent.
     }
 
     function clearDownload() {
@@ -552,7 +726,10 @@
       if (audioCtx) {
         try { audioCtx.close(); } catch (_) { }
       }
+      if (visualizerFrame) cancelAnimationFrame(visualizerFrame);
       audioCtx = null;
+      masterGain = null;
+      analyser = null;
     }
 
     // ... (stopExportPolling, stop, getCrossfadeSeconds, scheduleBuffer remain same) ...
@@ -614,12 +791,58 @@
       gain.gain.setValueAtTime(1, Math.max(startAt + fade, nextStartTime - fade));
       gain.gain.linearRampToValueAtTime(0, nextStartTime);
 
-      source.connect(gain).connect(audioCtx.destination);
+      // Connect to master gain instead of straight destination
+      if (masterGain) {
+        source.connect(gain).connect(masterGain);
+      } else {
+        source.connect(gain).connect(audioCtx.destination);
+      }
+
       source.start(startAt);
       sources.push(source);
 
       updateProgress(chunkIdx);
     }
+
+    // --- Visualizer ---
+    function drawVisualizer() {
+      if (!analyser) return;
+      const canvas = visualizer;
+      const ctx = canvas.getContext("2d");
+      const width = canvas.width;
+      const height = canvas.height;
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      analyser.getByteFrequencyData(dataArray);
+
+      ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--bg'); // clear with bg
+      ctx.clearRect(0, 0, width, height);
+
+      const barWidth = (width / bufferLength) * 2.5;
+      let barHeight;
+      let x = 0;
+
+      const accent = getComputedStyle(document.body).getPropertyValue('--accent');
+
+      for (let i = 0; i < bufferLength; i++) {
+        barHeight = dataArray[i] / 2;
+        ctx.fillStyle = accent;
+        ctx.fillRect(x, height - barHeight, barWidth, barHeight);
+        x += barWidth + 1;
+      }
+
+      visualizerFrame = requestAnimationFrame(drawVisualizer);
+    }
+
+    function syncVolume() {
+      if (masterGain) {
+        masterGain.gain.value = parseFloat(volBoostInput.value);
+      }
+    }
+
+    volBoostInput.addEventListener("input", syncVolume);
+    // ------------------
 
     function fileToBase64(file) {
       return new Promise((resolve, reject) => {
@@ -645,7 +868,7 @@
     async function analyzeEmotions() {
       const text = textInput.value.trim();
       if (!text) {
-        setStatus("Error", "Text is required");
+        showToast("Text is required", "error");
         return;
       }
 
@@ -696,7 +919,8 @@
 
       } catch (err) {
         setBtnProcessing(analyzeBtn, false);
-        setStatus("Error", err.message || "Failed to analyze emotions");
+        setStatus("Error", "Analysis failed");
+        showToast(err.message || "Failed to analyze emotions", "error");
       }
     }
 
@@ -714,7 +938,7 @@
 
     async function loadDocument() {
       if (docFileInput.files.length === 0) {
-        setStatus("Error", "Please select a document file");
+        showToast("Please select a document file", "error");
         return;
       }
 
@@ -743,8 +967,11 @@
         docInfo.textContent = `Loaded: ${data.filename} (${data.word_count} words)`;
 
         setStatus("Ready", `Document loaded: ${data.word_count} words`);
+        showToast(`Loaded ${data.filename}`, "success");
+        updateCharCount(); // update stats
       } catch (err) {
-        setStatus("Error", err.message || "Failed to load document");
+        setStatus("Error", "Load failed");
+        showToast(err.message || "Failed to load document", "error");
       } finally {
         setBtnProcessing(loadDocBtn, false);
       }
@@ -754,9 +981,11 @@
       stop();
       const text = textInput.value.trim();
       if (!text) {
-        setStatus("Error", "Text is required");
+        showToast("Text is required", "error");
         return;
       }
+
+      saveToHistory(text); // Save to history
 
       let refAudioB64 = null;
       if (refAudioInput.files.length > 0) {
@@ -764,7 +993,7 @@
         try {
           refAudioB64 = await fileToBase64(refAudioInput.files[0]);
         } catch (e) {
-          setStatus("Error", "Failed to read audio file");
+          showToast("Failed to read audio file", "error");
           return;
         }
       }
@@ -777,6 +1006,17 @@
 
       controller = new AbortController();
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+      // Setup Master Gain & Visualizer
+      masterGain = audioCtx.createGain();
+      masterGain.gain.value = parseFloat(volBoostInput.value);
+      masterGain.connect(audioCtx.destination);
+
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      masterGain.connect(analyser); // Visualize output
+      drawVisualizer(); // Start loop
+
       await audioCtx.resume();
 
       const payload = {
@@ -866,6 +1106,7 @@
       } catch (err) {
         stop();
         setStatus("Error", err.message || "Streaming failed");
+        showToast(err.message || "Streaming failed", "error");
       }
     }
 
