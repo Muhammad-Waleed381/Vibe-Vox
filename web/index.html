@@ -1,634 +1,827 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>VibeVox MVP</title>
-    <style>
-      :root {
-        --bg: #f5f2ec;
-        --panel: #fff8ee;
-        --ink: #1f1c17;
-        --accent: #b45a2b;
-        --accent-dark: #8e4521;
-        --muted: #6b6156;
-      }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        font-family: "IBM Plex Serif", "Georgia", serif;
-        color: var(--ink);
-        background: radial-gradient(800px 400px at 20% 20%, #fff2db, transparent),
-          linear-gradient(180deg, #f7f2ea 0%, #ede2d2 100%);
-      }
-      .wrap {
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
-        padding: 32px 16px;
-      }
-      .panel {
-        width: min(880px, 95vw);
-        background: var(--panel);
-        border: 1px solid #e3d5c3;
-        border-radius: 16px;
-        box-shadow: 0 18px 40px rgba(48, 32, 18, 0.15);
-        padding: 28px;
-      }
-      h1 {
-        font-size: 28px;
-        margin: 0 0 8px;
-        letter-spacing: 0.4px;
-      }
-      p {
-        margin: 0 0 20px;
-        color: var(--muted);
-      }
-      label {
-        font-weight: 600;
-        display: block;
-        margin-bottom: 6px;
-      }
-      .grid {
-        display: grid;
-        gap: 16px;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        margin-bottom: 16px;
-      }
-      input, textarea {
-        width: 100%;
-        border: 1px solid #d9c8b5;
-        border-radius: 10px;
-        padding: 10px 12px;
-        font-size: 14px;
-        background: #fffaf3;
-        color: var(--ink);
-      }
-      textarea { min-height: 160px; resize: vertical; }
-      .actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
-        align-items: center;
-      }
-      button {
-        border: none;
-        border-radius: 10px;
-        padding: 10px 16px;
-        font-size: 14px;
-        cursor: pointer;
-        background: var(--accent);
-        color: #fff;
-        transition: transform 0.15s ease, background 0.15s ease;
-      }
-      button:hover { background: var(--accent-dark); transform: translateY(-1px); }
-      button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
-      .status {
-        margin-top: 12px;
-        font-size: 13px;
-        color: var(--muted);
-      }
-      .badge {
-        display: inline-block;
-        padding: 4px 8px;
-        border-radius: 999px;
-        background: #ead7c5;
-        color: #6a3a1c;
-        font-size: 12px;
-        margin-left: 8px;
-      }
-      .emotion-panel {
-        margin-top: 16px;
-        padding: 16px;
-        background: #faf8f5;
-        border: 1px solid #e3d5c3;
-        border-radius: 12px;
-        max-height: 300px;
-        overflow-y: auto;
-      }
-      .emotion-panel h3 {
-        margin: 0 0 12px;
-        font-size: 14px;
-        color: var(--muted);
-      }
-      .emotion-chip {
-        display: inline-block;
-        padding: 4px 10px;
-        border-radius: 6px;
-        font-size: 12px;
-        margin: 3px;
-        background: #e8e0d5;
-      }
-      .emotion-chip.joy { background: #fff3cd; color: #856404; }
-      .emotion-chip.sadness { background: #d4edda; color: #155724; }
-      .emotion-chip.anger { background: #f8d7da; color: #721c24; }
-      .emotion-chip.fear { background: #e2e3e5; color: #383d41; }
-      .emotion-chip.excitement { background: #ffeeba; color: #856404; }
-      .emotion-chip.suspense { background: #d6d8d9; color: #1b1e21; }
-      .chunk-item {
-        padding: 8px;
-        margin: 4px 0;
-        border-radius: 6px;
-        background: #fff;
-        border-left: 3px solid var(--accent);
-        font-size: 13px;
-      }
-      .chunk-item.active {
-        background: #fff3e0;
-        border-left-color: var(--accent-dark);
-      }
-      .progress-bar {
-        height: 4px;
-        background: #e3d5c3;
-        border-radius: 2px;
-        margin-top: 8px;
-        overflow: hidden;
-      }
-      .progress-fill {
-        height: 100%;
-        background: var(--accent);
-        transition: width 0.3s ease;
-      }
-      .rate-slider {
-        width: 100%;
-        margin-top: 4px;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="wrap">
-      <div class="panel">
-        <h1>VibeVox MVP</h1>
-        <p>Live adaptive narration: text → emotion → style prompt → Qwen3-TTS, streamed as it’s generated.</p>
 
-        <div class="grid">
-          <div>
-            <label for="port">TTS Server Port</label>
-            <input id="port" type="number" value="5000" min="1" max="65535" />
-          </div>
-          <div>
-            <label for="speaker">Speaker Identity (Optional)</label>
-            <input id="speaker" type="text" value="Male_Narrator" placeholder="Only if not cloning..." />
-          </div>
-          <div>
-            <label for="groq_model">Groq Model</label>
-            <input id="groq_model" type="text" value="llama-3.1-8b-instant" />
-          </div>
-          <div>
-            <label for="crossfade">Crossfade (ms)</label>
-            <input id="crossfade" type="number" value="50" min="0" max="500" />
-          </div>
-          <div>
-            <label for="rate">Speaking Rate: <span id="rate_value">1.0x</span></label>
-            <input id="rate" type="range" class="rate-slider" value="1.0" min="0.5" max="2.0" step="0.1" />
-          </div>
-        </div>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VibeVox MVP</title>
+  <style>
+    :root {
+      --bg: #f5f2ec;
+      --panel: #fff8ee;
+      --ink: #1f1c17;
+      --accent: #b45a2b;
+      --accent-dark: #8e4521;
+      --muted: #6b6156;
+    }
 
-        <div style="margin-bottom: 16px; padding: 16px; background: #fffaf3; border: 1px dashed #d9c8b5; border-radius: 12px;">
-            <label style="color: var(--accent-dark);">🎙️ Voice Cloning (Override Speaker)</label>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px;">
-                <div>
-                    <label for="ref_audio" style="font-weight: normal; font-size: 13px;">Reference Audio (WAV/MP3)</label>
-                    <input id="ref_audio" type="file" accept="audio/*" />
-                </div>
-                <div>
-                    <label for="ref_text" style="font-weight: normal; font-size: 13px;">Reference Transcript</label>
-                    <input id="ref_text" type="text" placeholder="What is said in the audio?" />
-                </div>
-            </div>
-        </div>
+    [data-theme="dark"] {
+      --bg: #1a1814;
+      --panel: #26231f;
+      --ink: #eaddcf;
+      --accent: #d47a4b;
+      --accent-dark: #e88d60;
+      --muted: #a69b90;
+    }
 
-        <div style="margin-bottom: 16px; padding: 16px; background: #fffaf3; border: 1px dashed #d9c8b5; border-radius: 12px;">
-            <label style="color: var(--accent-dark);">📄 Document Upload (PDF, EPUB, TXT)</label>
-            <div style="display: grid; grid-template-columns: 1fr auto; gap: 16px; margin-top: 8px;">
-                <div>
-                    <label for="doc_file" style="font-weight: normal; font-size: 13px;">Select a document file</label>
-                    <input id="doc_file" type="file" accept=".pdf,.epub,.txt,.text" />
-                </div>
-                <div style="display: flex; align-items: flex-end;">
-                    <button id="load_doc" style="background: var(--muted);">Load Document</button>
-                </div>
-            </div>
-            <div id="doc_info" class="status" style="margin-top: 8px; display: none;"></div>
-        </div>
+    * {
+      box-sizing: border-box;
+    }
 
+    body {
+      margin: 0;
+      font-family: "IBM Plex Serif", "Georgia", serif;
+      color: var(--ink);
+      background: radial-gradient(800px 400px at 20% 20%, var(--bg), transparent),
+        linear-gradient(180deg, var(--bg) 0%, var(--panel) 100%);
+      transition: background 0.3s ease, color 0.3s ease;
+    }
+
+    .wrap {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 32px 16px;
+    }
+
+    .panel {
+      width: min(880px, 95vw);
+      background: var(--panel);
+      border: 1px solid #e3d5c3;
+      border-radius: 16px;
+      box-shadow: 0 18px 40px rgba(48, 32, 18, 0.15);
+      padding: 28px;
+      position: relative;
+      transition: background 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    h1 {
+      font-size: 28px;
+      margin: 0 0 8px;
+      letter-spacing: 0.4px;
+    }
+
+    p {
+      margin: 0 0 20px;
+      color: var(--muted);
+    }
+
+    label {
+      font-weight: 600;
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      margin-bottom: 16px;
+    }
+
+    input,
+    textarea {
+      width: 100%;
+      border: 1px solid #d9c8b5;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 14px;
+      color: var(--ink);
+      background: var(--bg);
+      transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+    }
+
+    input:focus,
+    textarea:focus {
+      border-color: var(--accent);
+      outline: none;
+    }
+
+    textarea {
+      min-height: 160px;
+      resize: vertical;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 10px 16px;
+      font-size: 14px;
+      cursor: pointer;
+      background: var(--accent);
+      color: #fff;
+      transition: transform 0.15s ease, background 0.15s ease;
+    }
+
+    button:hover {
+      background: var(--accent-dark);
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .status {
+      margin-top: 12px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #ead7c5;
+      color: #6a3a1c;
+      font-size: 12px;
+      margin-left: 8px;
+    }
+
+    .emotion-panel {
+      margin-top: 16px;
+      padding: 16px;
+      background: #faf8f5;
+      border: 1px solid #e3d5c3;
+      border-radius: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .emotion-panel h3 {
+      margin: 0 0 12px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .emotion-chip {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      margin: 3px;
+      background: #e8e0d5;
+    }
+
+    .emotion-chip.joy {
+      background: #fff3cd;
+      color: #856404;
+    }
+
+    .emotion-chip.sadness {
+      background: #d4edda;
+      color: #155724;
+    }
+
+    .emotion-chip.anger {
+      background: #f8d7da;
+      color: #721c24;
+    }
+
+    .emotion-chip.fear {
+      background: #e2e3e5;
+      color: #383d41;
+    }
+
+    .emotion-chip.excitement {
+      background: #ffeeba;
+      color: #856404;
+    }
+
+    .emotion-chip.suspense {
+      background: #d6d8d9;
+      color: #1b1e21;
+    }
+
+    .chunk-item {
+      padding: 8px;
+      margin: 4px 0;
+      border-radius: 6px;
+      background: #fff;
+      border-left: 3px solid var(--accent);
+      font-size: 13px;
+    }
+
+    .chunk-item.active {
+      background: #fff3e0;
+      border-left-color: var(--accent-dark);
+    }
+
+    .progress-bar {
+      height: 4px;
+      background: #e3d5c3;
+      border-radius: 2px;
+      margin-top: 8px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--accent);
+      transition: width 0.3s ease;
+    }
+
+    width: 100%;
+    margin-top: 4px;
+    }
+
+    .char-count {
+      text-align: right;
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .theme-toggle {
+      position: absolute;
+      top: 24px;
+      right: 24px;
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--muted);
+      padding: 6px 10px;
+      font-size: 18px;
+      line-height: 1;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: transform 0.2s ease, color 0.2s ease;
+    }
+
+    .theme-toggle:hover {
+      transform: rotate(15deg);
+      color: var(--ink);
+      background: rgba(0, 0, 0, 0.05);
+    }
+
+    [data-theme="dark"] .theme-toggle:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="panel">
+      <button id="theme_toggle" class="theme-toggle" title="Toggle Theme">🌗</button>
+      <h1>VibeVox MVP</h1>
+      <p>Live adaptive narration: text → emotion → style prompt → Qwen3-TTS, streamed as it’s generated.</p>
+
+      <div class="grid">
         <div>
-          <label for="text">Text to Speak</label>
-          <textarea id="text">The hallway was quiet. He paused, listening for any sound.</textarea>
+          <label for="port">TTS Server Port</label>
+          <input id="port" type="number" value="5000" min="1" max="65535" />
         </div>
-
-        <div class="actions" style="margin-top: 12px;">
-          <button id="analyze">Analyze Emotions</button>
+        <div>
+          <label for="speaker">Speaker Identity (Optional)</label>
+          <input id="speaker" type="text" value="Male_Narrator" placeholder="Only if not cloning..." />
         </div>
-
-        <div id="emotion_panel" class="emotion-panel" style="display: none;">
-          <h3>Emotion Analysis</h3>
-          <div id="emotion_summary"></div>
-          <div id="chunk_list" style="margin-top: 12px;"></div>
+        <div>
+          <label for="groq_model">Groq Model</label>
+          <input id="groq_model" type="text" value="llama-3.1-8b-instant" />
         </div>
-
-        <div class="actions" style="margin-top: 16px;">
-          <button id="live">Live Clone & Play</button>
-          <button id="stop" disabled>Stop</button>
-          <button id="export">Export Audiobook</button>
-          <span class="badge" id="status">Idle</span>
+        <div>
+          <label for="crossfade">Crossfade (ms)</label>
+          <input id="crossfade" type="number" value="50" min="0" max="500" />
         </div>
-
-        <!-- ... (Audio player and status divs remain same) ... -->
-        <div style="margin-top: 12px;">
-          <audio id="player" controls style="width: 100%;"></audio>
+        <div>
+          <label for="rate">Speaking Rate: <span id="rate_value">1.0x</span></label>
+          <input id="rate" type="range" class="rate-slider" value="1.0" min="0.5" max="2.0" step="0.1" />
         </div>
-        <div class="progress-bar">
-          <div id="progress_fill" class="progress-fill" style="width: 0%;"></div>
-        </div>
-
-        <div class="status" style="margin-top: 10px;">
-          <a id="download" href="#" style="display: none;">Download export</a>
-        </div>
-        <div class="status" id="detail"></div>
       </div>
+
+      <div
+        style="margin-bottom: 16px; padding: 16px; background: var(--bg); border: 1px dashed #d9c8b5; border-radius: 12px;">
+        <label style="color: var(--accent-dark);">🎙️ Voice Cloning (Override Speaker)</label>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px;">
+          <div>
+            <label for="ref_audio" style="font-weight: normal; font-size: 13px;">Reference Audio (WAV/MP3)</label>
+            <input id="ref_audio" type="file" accept="audio/*" />
+          </div>
+          <div>
+            <label for="ref_text" style="font-weight: normal; font-size: 13px;">Reference Transcript</label>
+            <input id="ref_text" type="text" placeholder="What is said in the audio?" />
+          </div>
+        </div>
+      </div>
+
+      <div
+        style="margin-bottom: 16px; padding: 16px; background: var(--bg); border: 1px dashed #d9c8b5; border-radius: 12px;">
+        <label style="color: var(--accent-dark);">📄 Document Upload (PDF, EPUB, TXT)</label>
+        <div style="display: grid; grid-template-columns: 1fr auto; gap: 16px; margin-top: 8px;">
+          <div>
+            <label for="doc_file" style="font-weight: normal; font-size: 13px;">Select a document file</label>
+            <input id="doc_file" type="file" accept=".pdf,.epub,.txt,.text" />
+          </div>
+          <div style="display: flex; align-items: flex-end;">
+            <button id="load_doc" style="background: var(--muted);">Load Document</button>
+          </div>
+        </div>
+        <div id="doc_info" class="status" style="margin-top: 8px; display: none;"></div>
+      </div>
+
+      <div>
+        <label for="text">Text to Speak</label>
+        <textarea id="text">The hallway was quiet. He paused, listening for any sound.</textarea>
+        <div id="char_count" class="char-count">0 chars</div>
+      </div>
+
+      <div class="actions" style="margin-top: 12px;">
+        <button id="analyze">Analyze Emotions</button>
+      </div>
+
+      <div id="emotion_panel" class="emotion-panel" style="display: none;">
+        <h3>Emotion Analysis</h3>
+        <div id="emotion_summary"></div>
+        <div id="chunk_list" style="margin-top: 12px;"></div>
+      </div>
+
+      <div class="actions" style="margin-top: 16px;">
+        <button id="live">Live Clone & Play</button>
+        <button id="stop" disabled>Stop</button>
+        <button id="export">Export Audiobook</button>
+        <span class="badge" id="status">Idle</span>
+      </div>
+
+      <!-- ... (Audio player and status divs remain same) ... -->
+      <div style="margin-top: 12px;">
+        <audio id="player" controls style="width: 100%;"></audio>
+      </div>
+      <div class="progress-bar">
+        <div id="progress_fill" class="progress-fill" style="width: 0%;"></div>
+      </div>
+
+      <div class="status" style="margin-top: 10px;">
+        <a id="download" href="#" style="display: none;">Download export</a>
+      </div>
+      <div class="status" id="detail"></div>
     </div>
+  </div>
 
-    <script>
-      // ... (Get Element IDs) ...
-      const liveBtn = document.getElementById("live");
-      const stopBtn = document.getElementById("stop");
-      const exportBtn = document.getElementById("export");
-      const statusBadge = document.getElementById("status");
-      const detail = document.getElementById("detail");
-      const downloadLink = document.getElementById("download");
-      const portInput = document.getElementById("port");
-      const speakerInput = document.getElementById("speaker");
-      const groqModelInput = document.getElementById("groq_model");
-      const crossfadeInput = document.getElementById("crossfade");
-      const textInput = document.getElementById("text");
-      const player = document.getElementById("player");
-      const refAudioInput = document.getElementById("ref_audio");
-      const refTextInput = document.getElementById("ref_text");
-      const docFileInput = document.getElementById("doc_file");
-      const loadDocBtn = document.getElementById("load_doc");
-      const docInfo = document.getElementById("doc_info");
-      const analyzeBtn = document.getElementById("analyze");
-      const emotionPanel = document.getElementById("emotion_panel");
-      const emotionSummary = document.getElementById("emotion_summary");
-      const chunkList = document.getElementById("chunk_list");
-      const rateInput = document.getElementById("rate");
-      const rateValue = document.getElementById("rate_value");
-      const progressFill = document.getElementById("progress_fill");
+  <script>
+    // ... (Get Element IDs) ...
+    const liveBtn = document.getElementById("live");
+    const stopBtn = document.getElementById("stop");
+    const exportBtn = document.getElementById("export");
+    const statusBadge = document.getElementById("status");
+    const detail = document.getElementById("detail");
+    const downloadLink = document.getElementById("download");
+    const portInput = document.getElementById("port");
+    const speakerInput = document.getElementById("speaker");
+    const groqModelInput = document.getElementById("groq_model");
+    const crossfadeInput = document.getElementById("crossfade");
+    const textInput = document.getElementById("text");
+    const player = document.getElementById("player");
+    const refAudioInput = document.getElementById("ref_audio");
+    const refTextInput = document.getElementById("ref_text");
+    const docFileInput = document.getElementById("doc_file");
+    const loadDocBtn = document.getElementById("load_doc");
+    const docInfo = document.getElementById("doc_info");
+    const analyzeBtn = document.getElementById("analyze");
+    const emotionPanel = document.getElementById("emotion_panel");
+    const emotionSummary = document.getElementById("emotion_summary");
+    const chunkList = document.getElementById("chunk_list");
+    const rateInput = document.getElementById("rate");
+    const rateValue = document.getElementById("rate_value");
 
-      // ... (Helper functions remain same) ...
-      let controller = null;
-      let audioCtx = null;
-      let nextStartTime = 0;
-      let sources = [];
-      let exportPoll = null;
-      let exportJobId = null;
-      let playbackRate = 1.0;
-      let currentChunkIndex = 0;
-      let totalChunks = 0;
+    const progressFill = document.getElementById("progress_fill");
+    const themeToggleBtn = document.getElementById("theme_toggle");
+    const charCountDisplay = document.getElementById("char_count");
 
-      function setStatus(label, info) {
-        statusBadge.textContent = label;
-        detail.textContent = info || "";
-      }
+    // --- Persistent Settings & Theme ---
+    const STORAGE_KEY_PREFIX = "vibevox_";
+    const SETTINGS_INPUTS = ["port", "speaker", "groq_model", "crossfade", "rate", "text"];
 
-      function clearDownload() {
-        if (!downloadLink) return;
-        downloadLink.style.display = "none";
-        downloadLink.href = "#";
-        downloadLink.removeAttribute("download");
-      }
-
-      function setDownload(url, filename) {
-        if (!downloadLink) return;
-        downloadLink.style.display = "inline-block";
-        downloadLink.href = url;
-        if (filename) downloadLink.setAttribute("download", filename);
-      }
-
-      function decodeBase64ToBytes(b64) {
-        const binary = atob(b64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) {
-          bytes[i] = binary.charCodeAt(i);
-        }
-        return bytes;
-      }
-
-      function stopAudio() {
-        for (const node of sources) {
-            try { node.stop(); } catch (_) {}
-        }
-        sources = [];
-        nextStartTime = 0;
-        if (audioCtx) {
-            try { audioCtx.close(); } catch (_) {}
-        }
-        audioCtx = null;
-      }
-
-      // ... (stopExportPolling, stop, getCrossfadeSeconds, scheduleBuffer remain same) ...
-
-       function stopExportPolling() {
-        if (exportPoll) {
-          clearInterval(exportPoll);
-          exportPoll = null;
-        }
-        exportJobId = null;
-      }
-
-      function stop() {
-        if (controller) controller.abort();
-        controller = null;
-        stopExportPolling();
-        stopAudio();
-        clearDownload();
-        if (player) {
-          player.pause();
-          player.removeAttribute("src");
-          player.load();
-        }
-        progressFill.style.width = "0%";
-        document.querySelectorAll(".chunk-item").forEach(el => el.classList.remove("active"));
-        currentChunkIndex = 0;
-        totalChunks = 0;
-        liveBtn.disabled = false;
-        exportBtn.disabled = false;
-        stopBtn.disabled = true;
-        setStatus("Idle", "");
-      }
-
-      function getCrossfadeSeconds() {
-        const ms = Number(crossfadeInput.value || "50");
-        if (!Number.isFinite(ms)) return 0.05;
-        return Math.max(0, Math.min(ms, 500)) / 1000.0;
-      }
-
-      function scheduleBuffer(audioBuffer, crossfadeSec, chunkIdx) {
-        if (!audioCtx) return;
-        const now = audioCtx.currentTime;
-        const fade = Math.min(crossfadeSec, audioBuffer.duration / 2);
-        const startAt = Math.max(nextStartTime ? (nextStartTime - fade) : (now + 0.05), now + 0.02);
-        nextStartTime = startAt + audioBuffer.duration;
-
-        const source = audioCtx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.playbackRate.value = playbackRate;
-
-        const gain = audioCtx.createGain();
-        gain.gain.setValueAtTime(0, startAt);
-        gain.gain.linearRampToValueAtTime(1, startAt + fade);
-        gain.gain.setValueAtTime(1, Math.max(startAt + fade, nextStartTime - fade));
-        gain.gain.linearRampToValueAtTime(0, nextStartTime);
-
-        source.connect(gain).connect(audioCtx.destination);
-        source.start(startAt);
-        sources.push(source);
-        
-        updateProgress(chunkIdx);
-      }
-
-      function fileToBase64(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = () => {
-                // Remove data:audio/xxx;base64, prefix
-                const base64 = reader.result.split(',')[1];
-                resolve(base64);
-            };
-            reader.onerror = error => reject(error);
-        });
-      }
-
-      rateInput.addEventListener("input", () => {
-        playbackRate = parseFloat(rateInput.value);
-        rateValue.textContent = playbackRate.toFixed(1) + "x";
-        if (player) {
-          player.playbackRate = playbackRate;
+    function loadSettings() {
+      // Load Inputs
+      SETTINGS_INPUTS.forEach(id => {
+        const val = localStorage.getItem(STORAGE_KEY_PREFIX + id);
+        if (val) {
+          const el = document.getElementById(id);
+          if (el) {
+            el.value = val;
+            // Trigger events for sliders/etc if needed
+            if (id === 'rate') {
+              playbackRate = parseFloat(val);
+              if (rateValue) rateValue.textContent = playbackRate.toFixed(1) + "x";
+            }
+          }
         }
       });
 
-      async function analyzeEmotions() {
-        const text = textInput.value.trim();
-        if (!text) {
-          setStatus("Error", "Text is required");
-          return;
-        }
-
-        setStatus("Analyzing", "Detecting emotions...");
-        
-        try {
-          const response = await fetch("/api/analyze_text", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              text,
-              groq_model: groqModelInput.value || "llama-3.1-8b-instant"
-            }),
-          });
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(errorText || "Failed to analyze text");
-          }
-
-          const data = await response.json();
-          
-          emotionSummary.innerHTML = "";
-          for (const [emotion, count] of Object.entries(data.emotion_summary)) {
-            const chip = document.createElement("span");
-            chip.className = `emotion-chip ${emotion.toLowerCase()}`;
-            chip.textContent = `${emotion} (${count})`;
-            emotionSummary.appendChild(chip);
-          }
-
-          chunkList.innerHTML = "";
-          data.chunks.forEach((chunk, idx) => {
-            const item = document.createElement("div");
-            item.className = "chunk-item";
-            item.id = `chunk_${idx}`;
-            item.innerHTML = `<strong>${chunk.emotion}</strong> [${chunk.intensity}] - ${chunk.text}`;
-            chunkList.appendChild(item);
-          });
-
-          totalChunks = data.total_chunks;
-          currentChunkIndex = 0;
-          emotionPanel.style.display = "block";
-          setStatus("Ready", `Analyzed: ${data.total_chunks} chunks`);
-
-        } catch (err) {
-          setStatus("Error", err.message || "Failed to analyze emotions");
-        }
+      // Load Theme
+      const storedTheme = localStorage.getItem(STORAGE_KEY_PREFIX + "theme");
+      if (storedTheme === "dark") {
+        document.documentElement.setAttribute("data-theme", "dark");
       }
 
-      function updateProgress(chunkIdx) {
-        if (totalChunks > 0) {
-          const percent = ((chunkIdx + 1) / totalChunks) * 100;
-          progressFill.style.width = percent + "%";
-        }
-        
-        document.querySelectorAll(".chunk-item").forEach((el, idx) => {
-          el.classList.toggle("active", idx === chunkIdx);
+      // Init Char Count
+      updateCharCount();
+    }
+
+    function saveSetting(id, value) {
+      localStorage.setItem(STORAGE_KEY_PREFIX + id, value);
+    }
+
+    function toggleTheme() {
+      const current = document.documentElement.getAttribute("data-theme");
+      const newTheme = current === "dark" ? "light" : "dark";
+
+      if (newTheme === "dark") {
+        document.documentElement.setAttribute("data-theme", "dark");
+      } else {
+        document.documentElement.removeAttribute("data-theme");
+      }
+      localStorage.setItem(STORAGE_KEY_PREFIX + "theme", newTheme);
+    }
+
+    function updateCharCount() {
+      const len = textInput.value.length;
+      charCountDisplay.textContent = `${len} chars`;
+    }
+
+    // Initialize
+    loadSettings();
+
+    // Event Listeners for Persistence
+    SETTINGS_INPUTS.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener("input", (e) => {
+          saveSetting(id, e.target.value);
+          if (id === "text") updateCharCount();
         });
-        currentChunkIndex = chunkIdx;
+        el.addEventListener("change", (e) => saveSetting(id, e.target.value));
       }
+    });
 
-      async function loadDocument() {
-        if (docFileInput.files.length === 0) {
-          setStatus("Error", "Please select a document file");
-          return;
-        }
+    themeToggleBtn.addEventListener("click", toggleTheme);
 
-        const file = docFileInput.files[0];
-        setStatus("Parsing", "Reading document...");
+    // --- End Persistent Settings ---
 
-        const formData = new FormData();
-        formData.append("file", file);
 
-        try {
-          const response = await fetch("/api/parse_document", {
-            method: "POST",
-            body: formData,
-          });
+    // ... (Helper functions remain same) ...
+    let controller = null;
+    let audioCtx = null;
+    let nextStartTime = 0;
+    let sources = [];
+    let exportPoll = null;
+    let exportJobId = null;
+    let playbackRate = 1.0;
+    let currentChunkIndex = 0;
+    let totalChunks = 0;
 
-          if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(errorText || "Failed to parse document");
-          }
+    function setStatus(label, info) {
+      statusBadge.textContent = label;
+      detail.textContent = info || "";
+    }
 
-          const data = await response.json();
-          textInput.value = data.text;
-          
-          docInfo.style.display = "block";
-          docInfo.textContent = `Loaded: ${data.filename} (${data.word_count} words)`;
-          
-          setStatus("Ready", `Document loaded: ${data.word_count} words`);
-        } catch (err) {
-          setStatus("Error", err.message || "Failed to load document");
-        }
+    function clearDownload() {
+      if (!downloadLink) return;
+      downloadLink.style.display = "none";
+      downloadLink.href = "#";
+      downloadLink.removeAttribute("download");
+    }
+
+    function setDownload(url, filename) {
+      if (!downloadLink) return;
+      downloadLink.style.display = "inline-block";
+      downloadLink.href = url;
+      if (filename) downloadLink.setAttribute("download", filename);
+    }
+
+    function decodeBase64ToBytes(b64) {
+      const binary = atob(b64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
       }
+      return bytes;
+    }
 
-      async function livePlay() {
-        stop();
-        const text = textInput.value.trim();
-        if (!text) {
-          setStatus("Error", "Text is required");
-          return;
-        }
+    function stopAudio() {
+      for (const node of sources) {
+        try { node.stop(); } catch (_) { }
+      }
+      sources = [];
+      nextStartTime = 0;
+      if (audioCtx) {
+        try { audioCtx.close(); } catch (_) { }
+      }
+      audioCtx = null;
+    }
 
-        let refAudioB64 = null;
-        if (refAudioInput.files.length > 0) {
-            setStatus("Preparing", "Encoding reference audio...");
-            try {
-                refAudioB64 = await fileToBase64(refAudioInput.files[0]);
-            } catch (e) {
-                setStatus("Error", "Failed to read audio file");
-                return;
-            }
-        }
+    // ... (stopExportPolling, stop, getCrossfadeSeconds, scheduleBuffer remain same) ...
 
-        liveBtn.disabled = true;
-        exportBtn.disabled = true;
-        stopBtn.disabled = false;
-        setStatus("Connecting", "Starting live stream...");
+    function stopExportPolling() {
+      if (exportPoll) {
+        clearInterval(exportPoll);
+        exportPoll = null;
+      }
+      exportJobId = null;
+    }
 
-        controller = new AbortController();
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        await audioCtx.resume();
+    function stop() {
+      if (controller) controller.abort();
+      controller = null;
+      stopExportPolling();
+      stopAudio();
+      clearDownload();
+      if (player) {
+        player.pause();
+        player.removeAttribute("src");
+        player.load();
+      }
+      progressFill.style.width = "0%";
+      document.querySelectorAll(".chunk-item").forEach(el => el.classList.remove("active"));
+      currentChunkIndex = 0;
+      totalChunks = 0;
+      liveBtn.disabled = false;
+      exportBtn.disabled = false;
+      stopBtn.disabled = true;
+      setStatus("Idle", "");
+    }
 
-        const payload = {
-          text,
-          tts_port: Number(portInput.value || "5000"),
-          speaker: speakerInput.value || "Male_Narrator",
-          groq_model: groqModelInput.value || "llama-3.1-8b-instant",
-          reference_audio: refAudioB64,
-          reference_text: refTextInput.value.trim() || null,
+    function getCrossfadeSeconds() {
+      const ms = Number(crossfadeInput.value || "50");
+      if (!Number.isFinite(ms)) return 0.05;
+      return Math.max(0, Math.min(ms, 500)) / 1000.0;
+    }
+
+    function scheduleBuffer(audioBuffer, crossfadeSec, chunkIdx) {
+      if (!audioCtx) return;
+      const now = audioCtx.currentTime;
+      const fade = Math.min(crossfadeSec, audioBuffer.duration / 2);
+      const startAt = Math.max(nextStartTime ? (nextStartTime - fade) : (now + 0.05), now + 0.02);
+      nextStartTime = startAt + audioBuffer.duration;
+
+      const source = audioCtx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.playbackRate.value = playbackRate;
+
+      const gain = audioCtx.createGain();
+      gain.gain.setValueAtTime(0, startAt);
+      gain.gain.linearRampToValueAtTime(1, startAt + fade);
+      gain.gain.setValueAtTime(1, Math.max(startAt + fade, nextStartTime - fade));
+      gain.gain.linearRampToValueAtTime(0, nextStartTime);
+
+      source.connect(gain).connect(audioCtx.destination);
+      source.start(startAt);
+      sources.push(source);
+
+      updateProgress(chunkIdx);
+    }
+
+    function fileToBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => {
+          // Remove data:audio/xxx;base64, prefix
+          const base64 = reader.result.split(',')[1];
+          resolve(base64);
         };
+        reader.onerror = error => reject(error);
+      });
+    }
 
+    rateInput.addEventListener("input", () => {
+      playbackRate = parseFloat(rateInput.value);
+      rateValue.textContent = playbackRate.toFixed(1) + "x";
+      if (player) {
+        player.playbackRate = playbackRate;
+      }
+    });
+
+    async function analyzeEmotions() {
+      const text = textInput.value.trim();
+      if (!text) {
+        setStatus("Error", "Text is required");
+        return;
+      }
+
+      setStatus("Analyzing", "Detecting emotions...");
+
+      try {
+        const response = await fetch("/api/analyze_text", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text,
+            groq_model: groqModelInput.value || "llama-3.1-8b-instant"
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || "Failed to analyze text");
+        }
+
+        const data = await response.json();
+
+        emotionSummary.innerHTML = "";
+        for (const [emotion, count] of Object.entries(data.emotion_summary)) {
+          const chip = document.createElement("span");
+          chip.className = `emotion-chip ${emotion.toLowerCase()}`;
+          chip.textContent = `${emotion} (${count})`;
+          emotionSummary.appendChild(chip);
+        }
+
+        chunkList.innerHTML = "";
+        data.chunks.forEach((chunk, idx) => {
+          const item = document.createElement("div");
+          item.className = "chunk-item";
+          item.id = `chunk_${idx}`;
+          item.innerHTML = `<strong>${chunk.emotion}</strong> [${chunk.intensity}] - ${chunk.text}`;
+          chunkList.appendChild(item);
+        });
+
+        totalChunks = data.total_chunks;
+        currentChunkIndex = 0;
+        emotionPanel.style.display = "block";
+        setStatus("Ready", `Analyzed: ${data.total_chunks} chunks`);
+
+      } catch (err) {
+        setStatus("Error", err.message || "Failed to analyze emotions");
+      }
+    }
+
+    function updateProgress(chunkIdx) {
+      if (totalChunks > 0) {
+        const percent = ((chunkIdx + 1) / totalChunks) * 100;
+        progressFill.style.width = percent + "%";
+      }
+
+      document.querySelectorAll(".chunk-item").forEach((el, idx) => {
+        el.classList.toggle("active", idx === chunkIdx);
+      });
+      currentChunkIndex = chunkIdx;
+    }
+
+    async function loadDocument() {
+      if (docFileInput.files.length === 0) {
+        setStatus("Error", "Please select a document file");
+        return;
+      }
+
+      const file = docFileInput.files[0];
+      setStatus("Parsing", "Reading document...");
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      try {
+        const response = await fetch("/api/parse_document", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || "Failed to parse document");
+        }
+
+        const data = await response.json();
+        textInput.value = data.text;
+
+        docInfo.style.display = "block";
+        docInfo.textContent = `Loaded: ${data.filename} (${data.word_count} words)`;
+
+        setStatus("Ready", `Document loaded: ${data.word_count} words`);
+      } catch (err) {
+        setStatus("Error", err.message || "Failed to load document");
+      }
+    }
+
+    async function livePlay() {
+      stop();
+      const text = textInput.value.trim();
+      if (!text) {
+        setStatus("Error", "Text is required");
+        return;
+      }
+
+      let refAudioB64 = null;
+      if (refAudioInput.files.length > 0) {
+        setStatus("Preparing", "Encoding reference audio...");
         try {
-          const response = await fetch(`/api/speak_stream`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-            signal: controller.signal,
-          });
-          // ... (Rest of streaming logic remains same) ...
-          if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(errorText || "Failed to stream audio");
-          }
-
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = "";
-          let chunkCount = null;
-          let chunksSeen = 0;
-          const crossfadeSec = getCrossfadeSeconds();
-
-          setStatus("Streaming", "Waiting for first chunk...");
-
-          while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            while (true) {
-              const nl = buffer.indexOf("\n");
-              if (nl === -1) break;
-              const line = buffer.slice(0, nl).trim();
-              buffer = buffer.slice(nl + 1);
-              if (!line) continue;
-
-              const msg = JSON.parse(line);
-              if (msg.type === "meta") {
-                chunkCount = msg.chunk_count;
-                setStatus("Streaming", `Preparing ${chunkCount} chunks...`);
-                continue;
-              }
-              if (msg.type === "chunk") {
-                chunksSeen += 1;
-                setStatus("Playing", chunkCount ? `Chunk ${chunksSeen}/${chunkCount}` : `Chunk ${chunksSeen}`);
-
-                const bytes = decodeBase64ToBytes(msg.audio_b64);
-                const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-                const audioBuffer = await audioCtx.decodeAudioData(ab);
-                scheduleBuffer(audioBuffer, crossfadeSec, chunksSeen - 1);
-                continue;
-              }
-              if (msg.type === "done") {
-                setStatus("Playing", "Stream complete (finishing playback)");
-                liveBtn.disabled = false;
-                exportBtn.disabled = false;
-                if (sources.length) {
-                  const last = sources[sources.length - 1];
-                  last.onended = () => stop();
-                } else {
-                  stop();
-                }
-                return;
-              }
-              if (msg.type === "error") {
-                throw new Error(msg.error || "Stream error");
-              }
-            }
-          }
-        } catch (err) {
-          stop();
-          setStatus("Error", err.message || "Streaming failed");
+          refAudioB64 = await fileToBase64(refAudioInput.files[0]);
+        } catch (e) {
+          setStatus("Error", "Failed to read audio file");
+          return;
         }
       }
 
-      async function exportAudiobook() {
-          // ... (Export needs similar update, but for brevity we focus on live play first as requested) ...
-          stop();
-          setStatus("Error", "Export not yet updated for cloning. Use Live Play.");
-      }
+      liveBtn.disabled = true;
+      exportBtn.disabled = true;
+      stopBtn.disabled = false;
+      setStatus("Connecting", "Starting live stream...");
 
-      liveBtn.addEventListener("click", livePlay);
-      stopBtn.addEventListener("click", stop);
-      exportBtn.addEventListener("click", exportAudiobook);
-      loadDocBtn.addEventListener("click", loadDocument);
-      analyzeBtn.addEventListener("click", analyzeEmotions);
-    </script>
-  </body>
+      controller = new AbortController();
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      await audioCtx.resume();
+
+      const payload = {
+        text,
+        tts_port: Number(portInput.value || "5000"),
+        speaker: speakerInput.value || "Male_Narrator",
+        groq_model: groqModelInput.value || "llama-3.1-8b-instant",
+        reference_audio: refAudioB64,
+        reference_text: refTextInput.value.trim() || null,
+      };
+
+      try {
+        const response = await fetch(`/api/speak_stream`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+        // ... (Rest of streaming logic remains same) ...
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || "Failed to stream audio");
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let chunkCount = null;
+        let chunksSeen = 0;
+        const crossfadeSec = getCrossfadeSeconds();
+
+        setStatus("Streaming", "Waiting for first chunk...");
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          while (true) {
+            const nl = buffer.indexOf("\n");
+            if (nl === -1) break;
+            const line = buffer.slice(0, nl).trim();
+            buffer = buffer.slice(nl + 1);
+            if (!line) continue;
+
+            const msg = JSON.parse(line);
+            if (msg.type === "meta") {
+              chunkCount = msg.chunk_count;
+              setStatus("Streaming", `Preparing ${chunkCount} chunks...`);
+              continue;
+            }
+            if (msg.type === "chunk") {
+              chunksSeen += 1;
+              setStatus("Playing", chunkCount ? `Chunk ${chunksSeen}/${chunkCount}` : `Chunk ${chunksSeen}`);
+
+              const bytes = decodeBase64ToBytes(msg.audio_b64);
+              const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+              const audioBuffer = await audioCtx.decodeAudioData(ab);
+              scheduleBuffer(audioBuffer, crossfadeSec, chunksSeen - 1);
+              continue;
+            }
+            if (msg.type === "done") {
+              setStatus("Playing", "Stream complete (finishing playback)");
+              liveBtn.disabled = false;
+              exportBtn.disabled = false;
+              if (sources.length) {
+                const last = sources[sources.length - 1];
+                last.onended = () => stop();
+              } else {
+                stop();
+              }
+              return;
+            }
+            if (msg.type === "error") {
+              throw new Error(msg.error || "Stream error");
+            }
+          }
+        }
+      } catch (err) {
+        stop();
+        setStatus("Error", err.message || "Streaming failed");
+      }
+    }
+
+    async function exportAudiobook() {
+      // ... (Export needs similar update, but for brevity we focus on live play first as requested) ...
+      stop();
+      setStatus("Error", "Export not yet updated for cloning. Use Live Play.");
+    }
+
+    liveBtn.addEventListener("click", livePlay);
+    stopBtn.addEventListener("click", stop);
+    exportBtn.addEventListener("click", exportAudiobook);
+    loadDocBtn.addEventListener("click", loadDocument);
+    analyzeBtn.addEventListener("click", analyzeEmotions);
+  </script>
+</body>
+
 </html>
