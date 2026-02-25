@@ -71,5 +71,11 @@ The system uses a producer-consumer agent architecture:
 - **Cloning Interface:** The UI currently relies on text descriptions for voice styling. **Audio upload for cloning is in active development.**
 - **Document Support:** PDF upload is planned; currently supports text paste.
 
+## ✅ MVP Microfeatures Available
+- **Async Export Jobs:** `Export Audiobook` now runs as a background job with progress tracking and downloadable WAV output.
+- **Safer API Inputs:** Text/reference/document payload limits and stronger request validation are enforced server-side.
+- **Service Metadata:** Added `GET /api/config` and richer `GET /api/health` output (uptime + active jobs).
+- **Operational Scripts:** Start/stop scripts now do readiness checks, stale PID handling, and safer shutdown behavior.
+
 ## 📚 Learn More
 See [AGENTS.md](AGENTS.md) for a detailed breakdown of the intelligent agents powering VibeVox.

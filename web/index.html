@@ -735,7 +735,6 @@
         // Limit to 10
         if (hist.length > 10) hist.pop();
         localStorage.setItem(STORAGE_KEY_PREFIX + "prompt_history", JSON.stringify(hist));
-        localStorage.setItem(STORAGE_KEY_PREFIX + "prompt_history", JSON.stringify(hist));
       }
 
       // --- Round 2 Logic ---
@@ -830,9 +829,6 @@
       let playbackRate = 1.0;
       let currentChunkIndex = 0;
       let totalChunks = 0;
-      let playbackRate = 1.0;
-      let currentChunkIndex = 0;
-      let totalChunks = 0;
       let visualizerFrame = null;
 
       // Client-Side Export
@@ -890,6 +886,18 @@
         downloadLink.style.display = "inline-block";
         downloadLink.href = url;
         if (filename) downloadLink.setAttribute("download", filename);
+      }
+
+      async function parseApiError(response) {
+        const bodyText = await response.text();
+        if (!bodyText) return `Request failed (${response.status})`;
+        try {
+          const parsed = JSON.parse(bodyText);
+          if (parsed && typeof parsed.detail === "string") return parsed.detail;
+          return bodyText;
+        } catch (_) {
+          return bodyText;
+        }
       }
 
       function decodeBase64ToBytes(b64) {
@@ -1082,8 +1090,7 @@
           });
 
           if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(errorText || "Failed to analyze text");
+            throw new Error(await parseApiError(response));
           }
 
           const data = await response.json();
@@ -1152,8 +1159,7 @@
           });
 
           if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(errorText || "Failed to parse document");
+            throw new Error(await parseApiError(response));
           }
 
           const data = await response.json();
@@ -1251,8 +1257,7 @@
           });
           // ... (Rest of streaming logic remains same) ...
           if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(errorText || "Failed to stream audio");
+            throw new Error(await parseApiError(response));
           }
 
           const reader = response.body.getReader();
@@ -1350,9 +1355,113 @@
       }
 
       async function exportAudiobook() {
-        // ... (Export needs similar update, but for brevity we focus on live play first as requested) ...
         stop();
-        setStatus("Error", "Export not yet updated for cloning. Use Live Play.");
+        const text = textInput.value.trim();
+        if (!text) {
+          showToast("Text is required", "error");
+          return;
+        }
+
+        let refAudioB64 = null;
+        if (recordedAudioBlob) {
+          setStatus("Preparing", "Encoding recorded audio...");
+          try {
+            refAudioB64 = await fileToBase64(recordedAudioBlob);
+          } catch (_) {
+            showToast("Failed to encode recording", "error");
+            return;
+          }
+        } else if (refAudioInput.files.length > 0) {
+          setStatus("Preparing", "Encoding reference audio...");
+          try {
+            refAudioB64 = await fileToBase64(refAudioInput.files[0]);
+          } catch (_) {
+            showToast("Failed to read audio file", "error");
+            return;
+          }
+        }
+
+        liveBtn.disabled = true;
+        exportBtn.disabled = true;
+        stopBtn.disabled = true;
+        setBtnProcessing(exportBtn, true, "Exporting...");
+        setStatus("Exporting", "Queued...");
+
+        const payload = {
+          text,
+          tts_port: Number(portInput.value || "5000"),
+          speaker: speakerInput.value || "Male_Narrator",
+          groq_model: groqModelInput.value || "llama-3.1-8b-instant",
+          reference_audio: refAudioB64,
+          reference_text: refTextInput.value.trim() || null,
+          crossfade_ms: Number(crossfadeInput.value || "50"),
+        };
+
+        try {
+          const createResponse = await fetch("/api/export", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          if (!createResponse.ok) {
+            throw new Error(await parseApiError(createResponse));
+          }
+
+          const createData = await createResponse.json();
+          exportJobId = createData.job_id;
+          progressFill.style.width = "0%";
+
+          stopExportPolling();
+          exportPoll = setInterval(async () => {
+            try {
+              const pollResponse = await fetch(`/api/export/${exportJobId}`);
+              if (!pollResponse.ok) {
+                throw new Error(await parseApiError(pollResponse));
+              }
+              const statusData = await pollResponse.json();
+
+              const pct = Math.max(0, Math.min(100, Math.round((statusData.progress || 0) * 100)));
+              progressFill.style.width = `${pct}%`;
+              setStatus(
+                "Exporting",
+                `${statusData.chunk_done || 0}/${statusData.chunk_total || 0} chunks (${pct}%)`
+              );
+
+              if (statusData.status === "done") {
+                stopExportPolling();
+                setBtnProcessing(exportBtn, false);
+                liveBtn.disabled = false;
+                exportBtn.disabled = false;
+                stopBtn.disabled = true;
+                setStatus("Ready", "Export complete");
+                const downloadUrl = statusData.download_url || `/api/export/${statusData.job_id}/download`;
+                setDownload(downloadUrl, `vibevox_export_${statusData.job_id}.wav`);
+                showToast("Export complete", "success");
+              } else if (statusData.status === "failed") {
+                stopExportPolling();
+                throw new Error(statusData.error || "Export failed");
+              } else if (statusData.status === "cancelled") {
+                stopExportPolling();
+                throw new Error("Export cancelled");
+              }
+            } catch (pollErr) {
+              stopExportPolling();
+              setBtnProcessing(exportBtn, false);
+              liveBtn.disabled = false;
+              exportBtn.disabled = false;
+              stopBtn.disabled = true;
+              setStatus("Error", pollErr.message || "Export failed");
+              showToast(pollErr.message || "Export failed", "error");
+            }
+          }, 1500);
+        } catch (err) {
+          setBtnProcessing(exportBtn, false);
+          liveBtn.disabled = false;
+          exportBtn.disabled = false;
+          stopBtn.disabled = true;
+          setStatus("Error", err.message || "Export failed");
+          showToast(err.message || "Export failed", "error");
+        }
       }
 
       liveBtn.addEventListener("click", livePlay);
