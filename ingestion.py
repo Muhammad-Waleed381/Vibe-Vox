@@ -15,6 +15,11 @@ def ingest_text(
     tokenizer: Optional[object] = None,
 ) -> List[Chunk]:
     """Return semantic chunks with metadata."""
+    if min_tokens < 1:
+        raise ValueError("min_tokens must be at least 1")
+    if max_tokens < min_tokens:
+        raise ValueError("max_tokens must be greater than or equal to min_tokens")
+
     tokenizer_obj = tokenizer or load_tokenizer(tokenizer_model)
     return chunk_text(
         text,
