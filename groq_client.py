@@ -68,7 +68,9 @@ def analyze_text_groq(text: str, config: GroqConfig) -> tuple[str, str, str]:
         response.raise_for_status()
         data = response.json()
 
-    content = data["choices"][0]["message"]["content"]
+    choices = data.get("choices") or []
+    message = choices[0].get("message", {}) if choices else {}
+    content = message.get("content", "")
     parsed = _extract_json(content)
     emotion = parsed.get("Emotion", "Neutral")
     intensity = parsed.get("Intensity", "Medium")
