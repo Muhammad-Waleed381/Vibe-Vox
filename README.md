@@ -67,6 +67,15 @@ The system uses a producer-consumer agent architecture:
     ```
     Access the Web UI at `http://localhost:8000`.
 
+## 🔌 API Snapshot
+
+- `GET /api/health` returns service health, uptime, and active export job count.
+- `GET /api/config` exposes default ports, model choices, and request limits used by the UI.
+- `POST /api/analyze_text` accepts text and returns chunk-level emotion analysis.
+- `POST /api/parse_document` extracts text from supported uploads before narration.
+- `POST /api/speak_stream` accepts text and streams synthesized audio for immediate playback.
+- `POST /api/export` creates a background export job for longer audiobook-style renders.
+
 ## ⚠️ Current Limitations (Beta)
 - **Cloning Interface:** The UI currently relies on text descriptions for voice styling. **Audio upload for cloning is in active development.**
 - **Document Support:** PDF upload is planned; currently supports text paste.
