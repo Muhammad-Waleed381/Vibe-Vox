@@ -97,6 +97,11 @@ def _validate_reference_audio(reference_audio: str | None) -> str | None:
     return reference_audio
 
 
+def _validate_speaker(speaker: str | None) -> str:
+    cleaned = (speaker or "").strip()
+    return cleaned or DEFAULT_SPEAKER
+
+
 def _public_export_status(job: dict[str, Any]) -> dict[str, Any]:
     return {
         "job_id": job["job_id"],
@@ -330,6 +335,7 @@ async def speak_stream(
     text = _validate_text(text)
     _validate_tts_port(tts_port)
     _validate_reference_audio(reference_audio)
+    speaker = _validate_speaker(speaker)
 
     try:
         groq_config = load_groq_config(groq_model)
@@ -426,6 +432,7 @@ async def export_audiobook(request: ExportRequest = Body(...)):
     request.text = _validate_text(request.text)
     request.tts_port = _validate_tts_port(request.tts_port)
     request.reference_audio = _validate_reference_audio(request.reference_audio)
+    request.speaker = _validate_speaker(request.speaker)
 
     try:
         load_groq_config(request.groq_model)
