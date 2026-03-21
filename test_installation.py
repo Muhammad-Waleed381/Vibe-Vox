@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """Test script to verify VibeVox installation and TTS functionality."""
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -152,6 +153,14 @@ def test_model_loading():
 
 def main():
     """Run all tests."""
+    parser = argparse.ArgumentParser(description="Run VibeVox installation checks.")
+    parser.add_argument(
+        "--skip-model",
+        action="store_true",
+        help="Skip the large Qwen3-TTS download and synthesis test.",
+    )
+    args = parser.parse_args()
+
     print("=" * 60)
     print("VibeVox Installation Test")
     print("=" * 60)
@@ -172,13 +181,17 @@ def main():
     results.append(("GROQ API Key", test_groq_key()))
     
     # Ask before model test (downloads large files)
-    print("⚠️  The next test will download the Qwen3-TTS model (~3.5GB)")
-    response = input("   Continue? [y/N]: ").strip().lower()
-    if response == 'y':
-        results.append(("Model Loading", test_model_loading()))
-    else:
-        print("   Skipped model loading test.")
+    if args.skip_model:
+        print("⚠️  Skipping model loading test (--skip-model).")
         print()
+    else:
+        print("⚠️  The next test will download the Qwen3-TTS model (~3.5GB)")
+        response = input("   Continue? [y/N]: ").strip().lower()
+        if response == 'y':
+            results.append(("Model Loading", test_model_loading()))
+        else:
+            print("   Skipped model loading test.")
+            print()
     
     # Summary
     print("=" * 60)
