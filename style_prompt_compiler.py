@@ -159,7 +159,8 @@ def normalize_intensity(intensity: str) -> str:
 
 
 def format_speaker(speaker: str) -> str:
-    return speaker.replace("_", " ").strip()
+    cleaned = speaker.replace("_", " ").strip()
+    return cleaned or DEFAULT_SPEAKER.replace("_", " ")
 
 
 def compile_style_prompt(
