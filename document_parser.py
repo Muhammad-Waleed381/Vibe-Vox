@@ -7,12 +7,12 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
-from typing import Optional
 
 
 def parse_txt(content: bytes) -> str:
     """Parse plain text file."""
-    return content.decode("utf-8", errors="replace")
+    encoding = detect_encoding(content)
+    return content.decode(encoding, errors="replace")
 
 
 def parse_pdf(content: bytes) -> str:
@@ -79,15 +79,14 @@ def parse_document(
     
     if extension in {".txt", ".text"}:
         return parse_txt(content)
-    elif extension == ".pdf":
+    if extension == ".pdf":
         return parse_pdf(content)
-    elif extension in {".epub"}:
+    if extension == ".epub":
         return parse_epub(content)
-    else:
-        raise ValueError(
-            f"Unsupported file format: {extension}. "
-            "Supported formats: .txt, .pdf, .epub"
-        )
+    raise ValueError(
+        f"Unsupported file format: {extension}. "
+        "Supported formats: .txt, .pdf, .epub"
+    )
 
 
 def detect_encoding(content: bytes) -> str:
