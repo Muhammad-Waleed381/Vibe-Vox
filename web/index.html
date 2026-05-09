@@ -432,9 +432,30 @@
       <div id="toast-container"></div>
 
       <h1 class="zen-hide">VibeVox MVP</h1>
-      <h1 class="zen-hide">VibeVox MVP</h1>
       <p class="zen-hide">Live adaptive narration: text → emotion → style prompt → Qwen3-TTS, streamed as it’s
         generated.</p>
+
+      <!-- Mode Selector -->
+      <div class="zen-hide" style="margin-bottom: 16px;">
+        <label style="font-weight: 600; display: block; margin-bottom: 6px;">Mode</label>
+        <div id="mode_tabs" style="display: flex; gap: 4px;">
+          <button class="mode-btn" data-mode="voice_clone"
+            style="flex:1; padding:8px; border:2px solid var(--accent); border-radius:8px; background:var(--bg); color:var(--ink); font-weight:600; cursor:pointer; opacity:0.6;">
+            🎙️ Clone
+            <span style="display:block; font-size:11px; font-weight:400; margin-top:2px;">Reference audio → your voice</span>
+          </button>
+          <button class="mode-btn" data-mode="custom_voice"
+            style="flex:1; padding:8px; border:2px solid var(--accent); border-radius:8px; background:var(--bg); color:var(--ink); font-weight:600; cursor:pointer; opacity:0.6;">
+            🗣️ Custom Voice
+            <span style="display:block; font-size:11px; font-weight:400; margin-top:2px;">Pre-built speaker + emotion</span>
+          </button>
+          <button class="mode-btn" data-mode="voice_design"
+            style="flex:1; padding:8px; border:2px solid var(--accent); border-radius:8px; background:var(--bg); color:var(--ink); font-weight:600; cursor:pointer; opacity:0.6;">
+            🎨 Voice Design
+            <span style="display:block; font-size:11px; font-weight:400; margin-top:2px;">Describe a novel voice</span>
+          </button>
+        </div>
+      </div>
 
       <!-- Presets -->
       <div class="zen-hide" style="margin-bottom: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
@@ -470,9 +491,10 @@
         </div>
       </div>
 
-      <div class="zen-hide"
+      <!-- Voice Cloning Section -->
+      <div id="clone_section" class="zen-hide mode-section" data-modes="voice_clone"
         style="margin-bottom: 16px; padding: 16px; background: var(--bg); border: 1px dashed #d9c8b5; border-radius: 12px;">
-        <label style="color: var(--accent-dark);">🎙️ Voice Cloning (Override Speaker)</label>
+        <label style="color: var(--accent-dark);">🎙️ Voice Cloning (Reference Audio)</label>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px;">
           <div>
             <label for="ref_audio" style="font-weight: normal; font-size: 13px;">Reference Audio (WAV/MP3)</label>
@@ -487,6 +509,34 @@
           <div>
             <label for="ref_text" style="font-weight: normal; font-size: 13px;">Reference Transcript</label>
             <input id="ref_text" type="text" placeholder="What is said in the audio?" />
+          </div>
+        </div>
+      </div>
+
+      <!-- CustomVoice Section -->
+      <div id="custom_voice_section" class="zen-hide mode-section" data-modes="custom_voice"
+        style="margin-bottom: 16px; padding: 16px; background: var(--bg); border: 1px dashed #d9c8b5; border-radius: 12px; display:none;">
+        <label style="color: var(--accent-dark);">🗣️ Custom Voice Speaker</label>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px;">
+          <div>
+            <label for="cv_speaker" style="font-weight: normal; font-size: 13px;">Speaker</label>
+            <select id="cv_speaker" style="width:100%; border:1px solid #d9c8b5; border-radius:10px; padding:10px 12px; font-size:14px; color:var(--ink); background:var(--bg);">
+              <option value="Vivian">Vivian — Bright young female (Chinese)</option>
+              <option value="Serena">Serena — Warm gentle female (Chinese)</option>
+              <option value="Uncle_Fu">Uncle Fu — Seasoned male (Chinese)</option>
+              <option value="Dylan">Dylan — Youthful Beijing male (Chinese Dialect)</option>
+              <option value="Eric">Eric — Lively Chengdu male (Sichuan Dialect)</option>
+              <option value="Ryan">Ryan — Dynamic male (English)</option>
+              <option value="Aiden">Aiden — Sunny American male (English)</option>
+              <option value="Ono_Anna">Ono Anna — Playful female (Japanese)</option>
+              <option value="Sohee">Sohee — Warm female (Korean)</option>
+            </select>
+            <div style="font-size:11px; color:var(--muted); margin-top:4px;">Speaker's native language gives best quality</div>
+          </div>
+          <div>
+            <label for="cv_instruct" style="font-weight: normal; font-size: 13px;">Emotion Instruction (optional)</label>
+            <input id="cv_instruct" type="text" placeholder="e.g. Very happy, Speak slowly..." />
+            <div style="font-size:11px; color:var(--muted); margin-top:4px;">Leave empty for auto-emotion from analysis</div>
           </div>
         </div>
       </div>
@@ -738,6 +788,30 @@
         if (hist.length > 10) hist.pop();
         localStorage.setItem(STORAGE_KEY_PREFIX + "prompt_history", JSON.stringify(hist));
       }
+
+      // --- Mode Switching ---
+      let currentMode = "voice_design";
+
+      document.querySelectorAll(".mode-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          currentMode = btn.dataset.mode;
+          document.querySelectorAll(".mode-btn").forEach(b => b.style.opacity = "0.6");
+          btn.style.opacity = "1";
+          document.querySelectorAll(".mode-section").forEach(el => {
+            const modes = (el.dataset.modes || "").split(",");
+            el.style.display = modes.includes(currentMode) ? "" : "none";
+          });
+          // Update speaker label
+          document.querySelector("#speaker").placeholder = currentMode === "custom_voice"
+            ? "Ignored in CustomVoice mode" : "Speaker identity for VoiceDesign";
+        });
+      });
+      // Default to voice_design selected
+      document.querySelector('[data-mode="voice_design"]').style.opacity = "1";
+      document.querySelectorAll(".mode-section").forEach(el => {
+        const modes = (el.dataset.modes || "").split(",");
+        if (!modes.includes("voice_design")) el.style.display = "none";
+      });
 
       // --- Round 2 Logic ---
 
@@ -1275,13 +1349,24 @@
         await audioCtx.resume();
 
         const payload = {
+          mode: currentMode,
           text,
           tts_port: Number(portInput.value || "5000"),
-          speaker: speakerInput.value || "Male_Narrator",
+          speaker: currentMode === "custom_voice"
+            ? (document.getElementById("cv_speaker").value || "Vivian")
+            : (speakerInput.value || "Male_Narrator"),
           groq_model: groqModelInput.value || "llama-3.1-8b-instant",
-          reference_audio: refAudioB64,
-          reference_text: refTextInput.value.trim() || null,
+          reference_audio: currentMode === "voice_clone" ? refAudioB64 : null,
+          reference_text: currentMode === "voice_clone" ? (refTextInput.value.trim() || null) : null,
         };
+
+        // For custom_voice, pass the manual instruct override if provided
+        if (currentMode === "custom_voice") {
+          const manualInstruct = document.getElementById("cv_instruct").value.trim();
+          if (manualInstruct) {
+            payload.style_prompt = manualInstruct;
+          }
+        }
 
         try {
           const response = await fetch(`/api/speak_stream`, {
@@ -1425,14 +1510,25 @@
         cancelExportBtn.disabled = false;
 
         const payload = {
+          mode: currentMode,
           text,
           tts_port: Number(portInput.value || "5000"),
-          speaker: speakerInput.value || "Male_Narrator",
+          speaker: currentMode === "custom_voice"
+            ? (document.getElementById("cv_speaker").value || "Vivian")
+            : (speakerInput.value || "Male_Narrator"),
           groq_model: groqModelInput.value || "llama-3.1-8b-instant",
-          reference_audio: refAudioB64,
-          reference_text: refTextInput.value.trim() || null,
+          reference_audio: currentMode === "voice_clone" ? refAudioB64 : null,
+          reference_text: currentMode === "voice_clone" ? (refTextInput.value.trim() || null) : null,
           crossfade_ms: Number(crossfadeInput.value || "50"),
         };
+
+        // For custom_voice, pass the manual instruct override if provided
+        if (currentMode === "custom_voice") {
+          const manualInstruct = document.getElementById("cv_instruct").value.trim();
+          if (manualInstruct) {
+            payload.style_prompt = manualInstruct;
+          }
+        }
 
         try {
           const createResponse = await fetch("/api/export", {
