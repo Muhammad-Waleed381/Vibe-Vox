@@ -1,4 +1,4 @@
-# VibeVox: AI Voice Cloning & Emotion Engine 🎙️⚡
+# VibeVox: AI Voice Cloning & Emotion Engine
 
 > **Clone Your Voice. Perform Any Emotion. Read Anything.**
 
@@ -6,85 +6,168 @@
 ![Model](https://img.shields.io/badge/Core-Qwen3_TTS-navy?style=for-the-badge)
 ![Capability](https://img.shields.io/badge/Voice-Cloning_%2B_Emotion-crimson?style=for-the-badge)
 
-VibeVox is an advanced AI Web Application designed to democratize professional-grade voice synthesis. It allows anyone to **clone their own voice** using just a short sample and then use that digital twin to **perform text with deep emotional intelligence**.
+VibeVox is an advanced AI Web Application for professional-grade voice synthesis. It combines Qwen3-TTS with emotion-aware orchestration to offer **three synthesis modes**:
 
-We solve the "robotic voice" problem by combining state-of-the-art Voice Cloning (Qwen3-TTS) with a semantic sentiment analysis engine (Llama 3.1) that directs *how* the cloned voice should feel—be it a terrified whisper or a jubilant shout.
+| Mode | Model | What it does |
+|---|---|---|
+| **Clone** | Qwen3-TTS Base | Zero-shot voice cloning from 3s reference audio |
+| **Custom Voice** | Qwen3-TTS CustomVoice | 9 pre-built premium speakers with instruction-based emotion |
+| **Voice Design** | Qwen3-TTS VoiceDesign | Describe any voice in natural language — creates it on the fly |
 
-## 🌟 Core Features (Vision)
+## Features
 
 ### 1. Zero-Shot Voice Cloning
-Upload a 10-second clip of your voice (or any voice you have rights to), and VibeVox instantly creates a high-fidelity digital replica. No training time required.
+Upload a 3-second clip + transcript. The Base model clones it instantly — no training. Reuse the same voice across an entire audiobook via **prompt caching** (build once, reuse for all chunks).
 
 ### 2. Emotion-Aware Performance
-Unlike standard TTS that drones on, VibeVox reads the room.
-- **Sad Text?** Your cloned voice breaks, pauses, and sighs.
-- **Action Scene?** Your cloned voice accelerates, projects, and intensifies.
-- **Dialogue?** It detects characters and switches styles automatically.
+Every chunk is analyzed by Llama 3.1 (Groq) for emotion + intensity. The compiler generates the right instruction for the active mode:
+- **Clone** → reference audio carries the voice (no instruction needed)
+- **Custom Voice** → short instruction: *"Strong: Speak with anger and intensity."*
+- **Voice Design** → full descriptive paragraph: *"A firm, tense voice with clipped phrasing..."*
 
-### 3. Document ➔ Audiobook
-Upload a PDF, EPUB, or paste a full novel. VibeVox will process the entire document, applying the appropriate emotional subtext to every paragraph, and generate a seamless audiobook in *your* voice.
+### 3. 9 Premium Speakers (CustomVoice)
+Select from pre-built voices — no reference audio required:
 
-## 🏗️ Architecture
+| Speaker | Description | Native Language |
+|---|---|---|
+| Vivian | Bright young female | Chinese |
+| Serena | Warm gentle female | Chinese |
+| Uncle Fu | Seasoned male, low mellow | Chinese |
+| Dylan | Youthful Beijing male | Chinese (Beijing) |
+| Eric | Lively Chengdu male | Chinese (Sichuan) |
+| Ryan | Dynamic male | English |
+| Aiden | Sunny American male | English |
+| Ono Anna | Playful female | Japanese |
+| Sohee | Warm female | Korean |
 
-The system uses a producer-consumer agent architecture:
-1.  **Ingestion:** Breaks text/documents into semantic chunks.
-2.  **Director (Analysis):** Llama 3.1 reads the text to determine the emotion (e.g., "Suspense", "Joy").
-3.  **Compiler:** Translates the emotion into a complex style prompt for the TTS.
-4.  **Synthesizer:** Qwen3-TTS takes your **Reference Audio** and the **Style Prompt** to generate the speech.
-5.  **Studio (Web UI):** Streams the audio back to you in real-time or exports a full WAV file.
+### 4. Document → Audiobook
+Upload PDF, EPUB, or TXT. VibeVox chunks, analyzes, and stitches the full document into a seamless WAV export with crossfade.
 
-## 🚀 Getting Started
+## Architecture
+
+```
+┌─ User ──────────────────────────────────────┐
+│  Mode: Clone | CustomVoice | VoiceDesign     │
+│  Text + Reference Audio (optional)           │
+└──────────────┬──────────────────────────────┘
+               ▼
+┌─────────────────────────────────────────────┐
+│  Orchestrator (web/app.py)                   │
+│  • Chunks text (ingestion.py)                │
+│  • Analyzes emotion (groq_client.py)         │
+│  • Compiles instruction (style_prompt..py)   │
+│  • Builds clone prompt once if cloning       │
+└──────────────┬──────────────────────────────┘
+               ▼
+┌─────────────────────────────────────────────┐
+│  TTS Server (tts_server.py)                  │
+│                                              │
+│  ┌──────────────┐  ┌───────────────────┐    │
+│  │ Base Model   │  │ CustomVoice Model │    │
+│  │ (voice clone)│  │ (9 speakers)      │    │
+│  └──────┬───────┘  └────────┬──────────┘    │
+│         │                   │                │
+│  ┌──────┴───────┐           │                │
+│  │VoiceDesign   │           │                │
+│  │(novel voices)│           │                │
+│  └──────────────┘           │                │
+│         │                   │                │
+│         └───────┬───────────┘                │
+│                 ▼                            │
+│          Audio WAV stream                    │
+└─────────────────────────────────────────────┘
+```
+
+## Getting Started
 
 ### Prerequisites
-- **GPU:** NVIDIA GPU with 12GB+ VRAM (for dual models) or 8GB (one at a time)
+- **GPU:** 12GB+ VRAM (all 3 models) or 6GB (1-2 models with `MODEL_SIZE=0.6B`)
 - **Python:** 3.10+
-- **Disk:** 15GB free (models + cache)
-- **API:** Groq API Key (for the "Director" agent)
+- **Disk:** 10-15GB free (model weights)
+- **API:** Groq API Key (for emotion analysis)
 
 ### Installation
 
-1.  **Clone & Install:**
-    ```bash
-    # Create environment
-    python -m venv venv
-    source venv/bin/activate
+```bash
+python -m venv venv
+source venv/bin/activate
 
-    # Install Torch & Flash Attention (Required for speed)
-    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-    pip install flash-attn --no-build-isolation
-    pip install -r requirements.txt
-    python -m nltk.downloader punkt
-    ```
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+pip install flash-attn --no-build-isolation
+pip install -r requirements.txt
+python -m nltk.downloader punkt
+```
 
-2.  **Configure:**
-    ```bash
-    export GROQ_API_KEY='your-key-here'
-    ```
+### Configuration
 
-3.  **Launch:**
-    ```bash
-    ./start_vibevox.sh
-    ```
-    Access the Web UI at `http://localhost:8000`.
+```bash
+export GROQ_API_KEY='your-key-here'
 
-## 🔌 API Snapshot
+# Optional: model size (default: 1.7B)
+export MODEL_SIZE=0.6B
 
-- `GET /api/health` returns service health, uptime, and active export job count.
-- `GET /api/config` exposes default ports, model choices, and request limits used by the UI.
-- `POST /api/analyze_text` accepts text and returns chunk-level emotion analysis.
-- `POST /api/parse_document` extracts text from supported uploads before narration.
-- `POST /api/speak_stream` accepts text and streams synthesized audio for immediate playback.
-- `POST /api/export` creates a background export job for longer audiobook-style renders.
+# Optional: which models to load (default: base + design)
+export LOAD_BASE_MODEL=true
+export LOAD_CUSTOM_VOICE_MODEL=false
+export LOAD_DESIGN_MODEL=true
+```
 
-## ⚠️ Current Limitations (Beta)
-- **Cloning Interface:** The UI currently relies on text descriptions for voice styling. **Audio upload for cloning is in active development.**
-- **Document Support:** PDF upload is planned; currently supports text paste.
+### Launch
 
-## ✅ MVP Microfeatures Available
-- **Async Export Jobs:** `Export Audiobook` now runs as a background job with progress tracking and downloadable WAV output.
-- **Safer API Inputs:** Text/reference/document payload limits and stronger request validation are enforced server-side.
-- **Service Metadata:** Added `GET /api/config` and richer `GET /api/health` output (uptime + active jobs).
-- **Operational Scripts:** Start/stop scripts now do readiness checks, stale PID handling, and safer shutdown behavior.
+```bash
+./start_vibevox.sh
+```
 
-## 📚 Learn More
+Access the Web UI at `http://localhost:8000`.
+
+### Mode Examples
+
+Select a mode in the UI, then click **Live Clone & Play**:
+
+- **Clone** — upload reference audio + transcript → speaks in that voice
+- **Custom Voice** — pick a speaker, optionally type *"Very happy"* → speaker obeys the emotion
+- **Voice Design** — type *"a raspy goblin voice, high-pitched with a lisp"* → novel voice created on the spot
+
+## API
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/health` | Service health, uptime, loaded models |
+| `GET /api/config` | Available modes, ports, limits |
+| `GET /api/speakers` | Available CustomVoice speakers |
+| `POST /api/analyze_text` | Returns chunk-level emotion analysis |
+| `POST /api/parse_document` | Extracts text from PDF/EPUB/TXT |
+| `POST /api/speak_stream` | Streams synthesized audio (NDJSON) |
+| `POST /api/export` | Background audiobook export job |
+| `GET /api/export/{id}` | Export job status + progress |
+| `DELETE /api/export/{id}` | Cancel export |
+
+### `POST /api/speak_stream`
+
+```json
+{
+  "mode": "custom_voice",
+  "text": "Hello world",
+  "speaker": "Ryan",
+  "style_prompt": "Speak with excitement.",
+  "tts_port": 5000
+}
+```
+
+Returns `application/x-ndjson` stream with audio chunks as base64 WAV.
+
+## Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `MODEL_SIZE` | `1.7B` | Model size: `0.6B` (lighter, faster) or `1.7B` (quality) |
+| `LOAD_BASE_MODEL` | `true` | Load the voice clone model |
+| `LOAD_CUSTOM_VOICE_MODEL` | `false` | Load the CustomVoice model |
+| `LOAD_DESIGN_MODEL` | `true` | Load the VoiceDesign model |
+| `TTS_PORT` | `5000` | TTS server port |
+| `VIBEVOX_PORT` | `8000` | Web UI server port |
+| `GROQ_API_KEY` | — | Required for emotion analysis |
+
+## Learn More
+
 See [AGENTS.md](AGENTS.md) for a detailed breakdown of the intelligent agents powering VibeVox.

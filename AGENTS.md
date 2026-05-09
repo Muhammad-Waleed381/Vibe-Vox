@@ -22,14 +22,19 @@ This agent reads the script and decides *how* it should be performed.
 **"The Prompt Engineer"**
 This agent merges the "Who" (User's Voice) with the "How" (Emotion).
 - **Role:** It acts as the bridge between the high-level emotion tags (e.g., `Emotion="Fear"`) and the low-level TTS constraints.
-- **Critical Function:** It constructs the complex natural language prompts required by the Qwen3-TTS engine, effectively saying: *"Use [User's Cloned Voice] but modify it to sound breathy, fast, and terrified."*
+- **Modes:**
+  - **VoiceDesign:** Constructs elaborate natural language descriptions (e.g., *"a breathy, terrified voice with tight phrasing"*).
+  - **CustomVoice:** Generates short, direct instructions (e.g., *"Strong: Speak with fear and caution."*).
+  - **Voice Clone:** Returns empty — no instruction needed, the reference audio carries the voice.
 
 ## 4. The Synthesis Agent (`tts_server.py`)
 **"The Voice Cloner"**
-The powerhouse of the system, running the Qwen3-TTS model.
-- **Current State:** Generates high-fidelity speech from text prompts ("Voice Design").
-- **Target State (Voice Cloning):** This agent is the primary target for upgrade. It needs to accept a **Reference Audio** (the user's voice sample) and perform Zero-Shot Voice Cloning *modulated* by the styling instructions from the Compiler Agent.
-- **Goal:** To reproduce the user's timbre and pitch while obeying the emotional direction.
+The powerhouse of the system, now running **three Qwen3-TTS models** with dynamic dispatch:
+- **Base Model** (`Qwen3-TTS-12Hz-{size}-Base`): Zero-shot voice cloning from 3s reference audio. Uses `generate_voice_clone()` with optional cached `voice_clone_prompt` for efficient multi-chunk synthesis.
+- **CustomVoice Model** (`Qwen3-TTS-12Hz-{size}-CustomVoice`): 9 pre-built premium speakers with instruction-based emotion/speed control. Uses `generate_custom_voice(text, language, speaker, instruct)`.
+- **VoiceDesign Model** (`Qwen3-TTS-12Hz-1.7B-VoiceDesign`): Creates novel voices from descriptive text prompts. Uses `generate_voice_design(text, language, instruct)`.
+- **Model Size:** Configurable via `MODEL_SIZE` env var (`0.6B` for lighter, `1.7B` for quality).
+- **Prompt Caching:** Clone prompts built once via `create_voice_clone_prompt()` and reused across chunks — critical for export/audiobook performance.
 
 ## 5. The Orchestrator Agent (`web/app.py`)
 **"The Interface"**
