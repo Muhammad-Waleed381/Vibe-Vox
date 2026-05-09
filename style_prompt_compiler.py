@@ -1,4 +1,4 @@
-"""Compile Emotion/Intensity into a TTS style prompt."""
+"""Compile Emotion/Intensity into a TTS style prompt or instruction."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from typing import Dict
 
 
 DEFAULT_SPEAKER = "Male_Narrator"
+SUPPORTED_MODES = ["voice_clone", "custom_voice", "voice_design"]
 
 
 @dataclass
@@ -161,6 +162,64 @@ def normalize_intensity(intensity: str) -> str:
 def format_speaker(speaker: str) -> str:
     cleaned = speaker.replace("_", " ").strip()
     return cleaned or DEFAULT_SPEAKER.replace("_", " ")
+
+
+INSTRUCT_TEMPLATES: Dict[str, str] = {
+    "neutral": "Speak with a neutral, steady tone.",
+    "awe": "Speak with awe and wonder.",
+    "nostalgia": "Speak with warm nostalgia.",
+    "boredom": "Speak in a bored, flat tone.",
+    "joy": "Speak with joy and brightness.",
+    "excitement": "Speak with excitement and energy.",
+    "pride": "Speak with pride and confidence.",
+    "relief": "Speak with relief and ease.",
+    "hope": "Speak with hopefulness.",
+    "sadness": "Speak with sadness and melancholy.",
+    "melancholy": "Speak with a wistful, melancholy tone.",
+    "guilt": "Speak with guilt and hesitation.",
+    "anger": "Speak with anger and intensity.",
+    "frustration": "Speak with frustration and tension.",
+    "fear": "Speak with fear and caution.",
+    "suspense": "Speak with suspense and tension.",
+    "surprise": "Speak with surprise and sudden emphasis.",
+    "curiosity": "Speak with curiosity and intrigue.",
+    "disgust": "Speak with disgust and restraint.",
+    "contempt": "Speak with contempt and coolness.",
+    "tender": "Speak with tenderness and care.",
+    "determination": "Speak with determination and focus.",
+    "calm": "Speak calmly and evenly.",
+    "serenity": "Speak with serenity and peace.",
+    "envy": "Speak with envy and restraint.",
+}
+
+INSTRUCT_INTENSITY: Dict[str, str] = {
+    "low": "mild",
+    "medium": "moderate",
+    "high": "strong",
+}
+
+
+def compile_instruction(
+    emotion: str,
+    intensity: str,
+    mode: str = "voice_design",
+) -> str:
+    """Return a mode-appropriate instruction string.
+
+    voice_design  → full descriptive paragraph  (for generate_voice_design)
+    custom_voice  → short direct sentence       (for generate_custom_voice instruct)
+    voice_clone   → empty string                (no instruction needed)
+    """
+    norm_emotion = normalize_emotion(emotion)
+    norm_intensity = normalize_intensity(intensity)
+
+    if mode == "custom_voice":
+        modifier = INSTRUCT_INTENSITY.get(norm_intensity, "moderate")
+        base = INSTRUCT_TEMPLATES.get(norm_emotion, INSTRUCT_TEMPLATES["neutral"])
+        return f"{modifier.capitalize()}: {base}"
+    if mode == "voice_design":
+        return compile_style_prompt(emotion, intensity).prompt
+    return ""
 
 
 def compile_style_prompt(
