@@ -98,55 +98,106 @@ def test_groq_key():
 
 
 def test_model_loading():
-    """Test if Qwen3-TTS model can be loaded."""
-    print("🎙️ Testing Qwen3-TTS model loading...")
+    """Test if Qwen3-TTS VoiceDesign model can be loaded."""
+    model_size = os.environ.get("MODEL_SIZE", "1.7B")
+    print(f"🎙️ Testing Qwen3-TTS VoiceDesign ({model_size}) loading...")
     print("   (This may take a while on first run - downloading ~3.5GB)")
-    
+
     try:
         import torch
         from qwen_tts import Qwen3TTSModel
-        
-        model_id = "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign"
+
+        model_id = f"Qwen/Qwen3-TTS-12Hz-{model_size}-VoiceDesign" if model_size == "0.6B" else "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign"
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
-        
+
         print(f"   Loading {model_id}...")
         print(f"   Device: {device}, Dtype: {dtype}")
-        
+
         model = Qwen3TTSModel.from_pretrained(
             model_id,
             device_map=device,
             dtype=dtype,
-            attn_implementation="eager",  # Use eager for testing to avoid flash_attn issues
+            attn_implementation="eager",
         )
-        
+
         print("  ✓ Model loaded successfully!")
-        
-        # Quick test synthesis
-        print("\n  Testing voice synthesis...")
+
+        print("\n  Testing voice design synthesis...")
         wavs, sr = model.generate_voice_design(
             text="Hello, this is a test of VibeVox.",
             language="English",
             instruct="A clear, neutral male voice with steady pacing.",
         )
-        
+
         print(f"  ✓ Synthesis successful! Generated {len(wavs[0])} samples at {sr}Hz")
-        
-        # Save test audio
+
         import soundfile as sf
         test_file = Path("test_tts_output.wav")
         sf.write(test_file, wavs[0], sr)
         print(f"  ✓ Saved test audio to: {test_file.absolute()}")
         print()
-        
+
         return True
-        
+
     except Exception as e:
         print(f"  ✗ Model loading failed: {e}")
         print("\nTroubleshooting:")
         print("  1. Check your internet connection (model needs to download)")
         print("  2. Ensure you have enough disk space (~5GB)")
         print("  3. Check CUDA/GPU availability")
+        print()
+        return False
+
+
+def test_custom_voice_loading():
+    """Test if Qwen3-TTS CustomVoice model can be loaded."""
+    model_size = os.environ.get("MODEL_SIZE", "1.7B")
+    print(f"🎙️ Testing Qwen3-TTS CustomVoice ({model_size}) loading...")
+
+    try:
+        import torch
+        from qwen_tts import Qwen3TTSModel
+
+        model_id = f"Qwen/Qwen3-TTS-12Hz-{model_size}-CustomVoice"
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
+
+        print(f"   Loading {model_id}...")
+        print(f"   Device: {device}, Dtype: {dtype}")
+
+        model = Qwen3TTSModel.from_pretrained(
+            model_id,
+            device_map=device,
+            dtype=dtype,
+            attn_implementation="eager",
+        )
+
+        print("  ✓ Model loaded successfully!")
+
+        speakers = model.get_supported_speakers()
+        print(f"  ✓ Available speakers: {', '.join(speakers[:3])}... ({len(speakers)} total)")
+
+        print("\n  Testing custom voice synthesis...")
+        wavs, sr = model.generate_custom_voice(
+            text="Hello, this is a test of CustomVoice on VibeVox.",
+            language="English",
+            speaker=speakers[0],
+            instruct="Speak with calm confidence.",
+        )
+
+        print(f"  ✓ Synthesis successful! Generated {len(wavs[0])} samples at {sr}Hz")
+
+        import soundfile as sf
+        test_file = Path("test_custom_voice_output.wav")
+        sf.write(test_file, wavs[0], sr)
+        print(f"  ✓ Saved test audio to: {test_file.absolute()}")
+        print()
+
+        return True
+
+    except Exception as e:
+        print(f"  ✗ CustomVoice model loading/synthesis failed: {e}")
         print()
         return False
 
@@ -158,6 +209,11 @@ def main():
         "--skip-model",
         action="store_true",
         help="Skip the large Qwen3-TTS download and synthesis test.",
+    )
+    parser.add_argument(
+        "--test-custom-voice",
+        action="store_true",
+        help="Also test the CustomVoice model (additional download).",
     )
     args = parser.parse_args()
 
@@ -185,10 +241,19 @@ def main():
         print("⚠️  Skipping model loading test (--skip-model).")
         print()
     else:
-        print("⚠️  The next test will download the Qwen3-TTS model (~3.5GB)")
+        model_size = os.environ.get("MODEL_SIZE", "1.7B")
+        print(f"⚠️  The next test will download the Qwen3-TTS VoiceDesign model (MODEL_SIZE={model_size})")
         response = input("   Continue? [y/N]: ").strip().lower()
         if response == 'y':
-            results.append(("Model Loading", test_model_loading()))
+            results.append(("VoiceDesign", test_model_loading()))
+
+            if args.test_custom_voice:
+                print(f"\n⚠️  Also testing CustomVoice model (MODEL_SIZE={model_size})")
+                cv_response = input("   Continue? [y/N]: ").strip().lower()
+                if cv_response == 'y':
+                    results.append(("CustomVoice", test_custom_voice_loading()))
+                else:
+                    print("   Skipped CustomVoice test.")
         else:
             print("   Skipped model loading test.")
             print()
