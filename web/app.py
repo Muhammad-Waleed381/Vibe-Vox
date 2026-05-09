@@ -22,7 +22,7 @@ from dialogue_detection import has_dialogue
 from document_parser import parse_document
 from groq_client import analyze_text_groq, load_groq_config
 from ingestion import ingest_text
-from style_prompt_compiler import compile_style_prompt
+from style_prompt_compiler import SUPPORTED_MODES, compile_instruction, compile_style_prompt
 
 
 APP_DIR = Path(__file__).parent
@@ -53,6 +53,7 @@ class AnalyzeRequest(BaseModel):
 
 
 class SpeakRequest(BaseModel):
+    mode: str = "voice_design"
     text: str | None = None
     tts_port: int = DEFAULT_TTS_PORT
     groq_model: str = DEFAULT_GROQ_MODEL
@@ -62,6 +63,7 @@ class SpeakRequest(BaseModel):
 
 
 class ExportRequest(BaseModel):
+    mode: str = "voice_design"
     text: str
     tts_port: int = DEFAULT_TTS_PORT
     groq_model: str = DEFAULT_GROQ_MODEL
@@ -125,11 +127,14 @@ async def _fetch_tts_audio(
     style_prompt: str,
     speaker: str,
     port: int,
+    mode: str = "voice_design",
     reference_audio: str | None = None,
     reference_text: str | None = None,
+    prompt_id: str | None = None,
 ) -> bytes:
     url = _build_tts_url(port)
     payload: dict[str, Any] = {
+        "mode": mode,
         "text": text,
         "style_prompt": style_prompt,
         "speaker": speaker,
@@ -138,6 +143,8 @@ async def _fetch_tts_audio(
         payload["reference_audio"] = reference_audio
     if reference_text:
         payload["reference_text"] = reference_text
+    if prompt_id:
+        payload["prompt_id"] = prompt_id
 
     timeout = httpx.Timeout(connect=10.0, read=300.0, write=20.0, pool=10.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
@@ -146,6 +153,25 @@ async def _fetch_tts_audio(
         if response.status_code != 200:
             raise HTTPException(status_code=502, detail=f"TTS server error: {response.text}")
         return response.content
+
+
+async def _build_clone_prompt(
+    port: int,
+    reference_audio: str,
+    reference_text: str | None = None,
+) -> str:
+    """Build a reusable voice clone prompt on the TTS server."""
+    url = f"http://localhost:{port}/tts/build_prompt"
+    async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=60.0)) as client:
+        response = await client.post(url, json={
+            "reference_audio": reference_audio,
+            "reference_text": reference_text or "",
+        })
+        await response.aread()
+        if response.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"Prompt build error: {response.text}")
+        data = response.json()
+        return data["prompt_id"]
 
 
 async def _run_export_job(job_id: str, request: ExportRequest) -> None:
@@ -159,6 +185,17 @@ async def _run_export_job(job_id: str, request: ExportRequest) -> None:
         if not chunks:
             raise RuntimeError("No chunks generated from input text")
 
+        mode = request.mode if request.mode in SUPPORTED_MODES else "voice_design"
+
+        # Build clone prompt once if cloning
+        clone_prompt_id: str | None = None
+        if mode == "voice_clone" and request.reference_audio:
+            clone_prompt_id = await _build_clone_prompt(
+                request.tts_port,
+                request.reference_audio,
+                request.reference_text,
+            )
+
         stitched_audio: AudioSegment | None = None
         crossfade_ms = max(0, min(int(request.crossfade_ms), 500))
 
@@ -169,20 +206,18 @@ async def _run_export_job(job_id: str, request: ExportRequest) -> None:
                 chunk.text,
                 groq_config,
             )
-            style = compile_style_prompt(
-                emotion,
-                intensity,
-                speaker=request.speaker,
-                character_mode=auto_character,
-            )
+
+            instruct = compile_instruction(emotion, intensity, mode=mode)
 
             audio_bytes = await _fetch_tts_audio(
                 chunk.text,
-                style.prompt,
+                instruct,
                 request.speaker,
                 request.tts_port,
-                reference_audio=request.reference_audio,
-                reference_text=request.reference_text,
+                mode=mode,
+                reference_audio=request.reference_audio if not clone_prompt_id else None,
+                reference_text=request.reference_text if not clone_prompt_id else None,
+                prompt_id=clone_prompt_id,
             )
             segment = AudioSegment.from_file(io.BytesIO(audio_bytes), format="wav")
 
@@ -238,6 +273,8 @@ def health() -> dict[str, Any]:
 @app.get("/api/config")
 def config() -> dict[str, Any]:
     return {
+        "modes": list(SUPPORTED_MODES),
+        "default_mode": "voice_design",
         "default_tts_port": DEFAULT_TTS_PORT,
         "default_groq_model": DEFAULT_GROQ_MODEL,
         "default_speaker": DEFAULT_SPEAKER,
@@ -316,6 +353,7 @@ async def parse_document_upload(file: UploadFile = File(...)):
 
 @app.post("/api/speak_stream")
 async def speak_stream(
+    mode: str = "voice_design",
     text: str | None = None,
     tts_port: int = DEFAULT_TTS_PORT,
     groq_model: str = DEFAULT_GROQ_MODEL,
@@ -325,12 +363,16 @@ async def speak_stream(
     body: SpeakRequest | None = Body(None),
 ):
     if body is not None:
+        mode = body.mode or "voice_design"
         text = body.text
         tts_port = body.tts_port
         groq_model = body.groq_model
         speaker = body.speaker
         reference_audio = body.reference_audio
         reference_text = body.reference_text
+
+    if mode not in SUPPORTED_MODES:
+        mode = "voice_design"
 
     text = _validate_text(text)
     _validate_tts_port(tts_port)
@@ -344,6 +386,11 @@ async def speak_stream(
 
     chunks = ingest_text(text, max_tokens=150)
 
+    # Build clone prompt once for the whole stream if cloning
+    clone_prompt_id: str | None = None
+    if mode == "voice_clone" and reference_audio:
+        clone_prompt_id = await _build_clone_prompt(tts_port, reference_audio, reference_text)
+
     async def producer(queue: asyncio.Queue) -> None:
         try:
             for chunk in chunks:
@@ -353,21 +400,18 @@ async def speak_stream(
                     chunk.text,
                     groq_config,
                 )
-                style = compile_style_prompt(
-                    emotion,
-                    intensity,
-                    speaker=speaker,
-                    character_mode=auto_character,
-                )
+                instruct = compile_instruction(emotion, intensity, mode=mode)
                 await queue.put(
                     {
+                        "mode": mode,
                         "chunk_id": chunk.chunk_id,
                         "text": chunk.text,
                         "emotion": emotion,
                         "intensity": intensity,
-                        "style_prompt": style.prompt,
-                        "reference_audio": reference_audio,
-                        "reference_text": reference_text,
+                        "style_prompt": instruct,
+                        "reference_audio": reference_audio if not clone_prompt_id else None,
+                        "reference_text": reference_text if not clone_prompt_id else None,
+                        "prompt_id": clone_prompt_id,
                     }
                 )
         finally:
@@ -384,6 +428,7 @@ async def speak_stream(
             yield encode_event(
                 {
                     "type": "meta",
+                    "mode": mode,
                     "chunk_count": len(chunks),
                     "tts_port": tts_port,
                     "speaker": speaker,
@@ -400,8 +445,10 @@ async def speak_stream(
                     item["style_prompt"],
                     speaker,
                     tts_port,
+                    mode=item["mode"],
                     reference_audio=item.get("reference_audio"),
                     reference_text=item.get("reference_text"),
+                    prompt_id=item.get("prompt_id"),
                 )
                 yield encode_event(
                     {
@@ -433,6 +480,8 @@ async def export_audiobook(request: ExportRequest = Body(...)):
     request.tts_port = _validate_tts_port(request.tts_port)
     request.reference_audio = _validate_reference_audio(request.reference_audio)
     request.speaker = _validate_speaker(request.speaker)
+    if request.mode not in SUPPORTED_MODES:
+        request.mode = "voice_design"
 
     try:
         load_groq_config(request.groq_model)
