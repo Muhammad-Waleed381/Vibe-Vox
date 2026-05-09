@@ -31,6 +31,8 @@ WEB_HOST=${VIBEVOX_HOST:-127.0.0.1}
 echo "🔧 Configuration:"
 echo "   TTS Server: http://$TTS_HOST:$TTS_PORT"
 echo "   Web Server: http://$WEB_HOST:$WEB_PORT"
+echo "   Model Size: ${MODEL_SIZE:-1.7B}  (set MODEL_SIZE=0.6B for lighter models)"
+echo "   Models: Base=${LOAD_BASE_MODEL:-true}, CustomVoice=${LOAD_CUSTOM_VOICE_MODEL:-false}, Design=${LOAD_DESIGN_MODEL:-true}"
 echo ""
 
 # Create logs directory
@@ -68,7 +70,12 @@ wait_for_http() {
 
 # Start TTS Server in background
 echo "🚀 Starting TTS Server (Qwen3-TTS)..."
-TTS_HOST=$TTS_HOST TTS_PORT=$TTS_PORT python tts_server.py > logs/tts_server.log 2>&1 &
+TTS_HOST=$TTS_HOST TTS_PORT=$TTS_PORT \
+  MODEL_SIZE=${MODEL_SIZE:-1.7B} \
+  LOAD_BASE_MODEL=${LOAD_BASE_MODEL:-true} \
+  LOAD_CUSTOM_VOICE_MODEL=${LOAD_CUSTOM_VOICE_MODEL:-false} \
+  LOAD_DESIGN_MODEL=${LOAD_DESIGN_MODEL:-true} \
+  python tts_server.py > logs/tts_server.log 2>&1 &
 TTS_PID=$!
 echo "   TTS Server PID: $TTS_PID"
 
